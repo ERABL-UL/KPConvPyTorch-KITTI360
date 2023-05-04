@@ -60,9 +60,9 @@ class SemanticKittiDataset(PointCloudDataset):
         ##########################
         # Parameters for the files
         ##########################
-
+        
         # Dataset folder
-        self.path = "/scratch/wialb"
+        self.path = "/home/willalbert20/Documents"
 
         # Type of task conducted on this dataset
         self.dataset_task = "slam_segmentation"
@@ -83,13 +83,15 @@ class SemanticKittiDataset(PointCloudDataset):
 
         # List all files in each sequence
         self.frames = []
+        
         for seq in self.sequences:
-            velo_path = join(self.path, self.set, "sequences", seq)
+            velo_path = join(self.path, "inputs", self.set, "sequences", seq)
             frames = np.sort(
                 [vf[:-4] for vf in listdir(velo_path) if vf.endswith(".ply")]
             )  # [:-4] pour enlever le ".ply"
 
             self.frames.append(frames)
+        
 
         ###########################
         # Object classes parameters
@@ -122,7 +124,8 @@ class SemanticKittiDataset(PointCloudDataset):
         self.init_labels()
 
         # List of classes ignored during training (can be empty)
-        self.ignored_labels = np.sort([0])
+        #self.ignored_labels = np.sort([0, 5, 6])    # [void, sky, person]
+        self.ignored_labels = np.sort([0])    # [void, sky, person]
 
         ##################
         # Other parameters
@@ -195,6 +198,9 @@ class SemanticKittiDataset(PointCloudDataset):
         )
         self.worker_waiting.share_memory_()
         self.worker_lock = Lock()
+        
+        # self.writer = SummaryWriter(f'runs/testSumWrtr')
+        # self.evaluator = iouEval(n_classes=config.num_classes, ignore=self.ignored_labels)
 
         return
 
@@ -203,6 +209,7 @@ class SemanticKittiDataset(PointCloudDataset):
         Return the length of data here
         """
         return len(self.frames)
+    
 
     def __getitem__(self, batch_i):
         """
@@ -282,7 +289,7 @@ class SemanticKittiDataset(PointCloudDataset):
                          continue                                                                                       #
 
                 # Path of points and labels
-                seq_path = join(self.path, self.set, "sequences", self.sequences[s_ind])
+                seq_path = join(self.path, "inputs", self.set, "sequences", self.sequences[s_ind])
                 velo_file = join(seq_path, self.frames[s_ind][f_ind - f_inc] + ".ply")
                 
                 if self.set == "test":
@@ -304,20 +311,22 @@ class SemanticKittiDataset(PointCloudDataset):
                 else:
                     # Read labels
                     sem_labels = read_ply(label_file)["semantic"]
+                    sem_labels = sem_labels.astype(np.int32)
                     sem_labels = self.learning_map[sem_labels]
-
+                    
                 # Apply pose (without np.dot to avoid multi-threading)
                 # hpoints = np.hstack((points[:, :3], np.ones_like(points[:, :1])))
                 # new_points = hpoints.dot(pose.T)
                 # new_points = np.sum(np.expand_dims(hpoints, 2) * pose.T, axis=1)
                 
                 new_points = points    # Complete point cloud / Nuage de points complet
+                
 
                 # In case of validation, keep the original points in memory
                 if self.set in ["validation", "test"] and f_inc == 0:
                     o_pts = new_points.astype(np.float32)
                     o_labels = sem_labels.astype(np.int32)
-
+                
                 # In case radius smaller than 50m, chose new center on a point of the wanted class or not
                 if self.in_R < 50.0 and f_inc == 0:
                     if self.balance_classes:
@@ -328,13 +337,13 @@ class SemanticKittiDataset(PointCloudDataset):
                         # Predicted labels
                         wanted_ind = np.random.choice(new_points.shape[0])
                     
-                    elif exists("/scratch/wialb/test/Log_2023-02-20_17-17-48/predictions"):
+                    elif self.set == "test" and exists("/home/willalbert20/Documents/test/Log_2023-02-20_17-17-48/predictions"):
                         # Selection non aleatoire du centre de sphere / Not random center sphere selection
                         # Si un point a une prediction de 0, on le selectionne. S'il n'y en a pas, on selectionne aleatoirement
                         if s_ind == 0: predsFileSeq = 8
                         else: predsFileSeq = 18
                         
-                        fetchPredsFile = '/scratch/wialb/test/Log_2023-02-20_17-17-48/predictions/{:02d}_{:07d}.ply'.format(predsFileSeq, f_ind)
+                        fetchPredsFile = '/home/willalbert20/Documents/test/Log_2023-02-20_17-17-48/predictions/{:02d}_{:07d}.ply'.format(predsFileSeq, f_ind)
 
                         try:     
                             # Lire les points de predictions
@@ -348,6 +357,9 @@ class SemanticKittiDataset(PointCloudDataset):
                                 wanted_ind = np.random.choice(new_points.shape[0])
                         except:
                             wanted_ind = np.random.choice(new_points.shape[0])
+
+                    else:
+                        wanted_ind = np.random.choice(new_points.shape[0])
                     
                     
                     # Centre de la nouvelle sphere / center of the new sphere
@@ -372,11 +384,13 @@ class SemanticKittiDataset(PointCloudDataset):
                     # new_coords = new_coords.dot(pose0[:3, :3])
                     # new_coords = np.sum(np.expand_dims(new_coords, 2) * pose0[:3, :3], axis=1)
                     new_coords = np.hstack((new_coords, points[rand_order]))
-
+                                    
                 # Increment merge count
+                
                 merged_points = np.vstack((merged_points, new_points))
+                merged_points = np.asarray(merged_points, dtype=np.float32)
                 merged_labels = np.hstack((merged_labels, sem_labels))
-                merged_coords = np.vstack((merged_coords, new_coords))
+                merged_coords = merged_points#np.vstack((merged_coords, new_points))
                 num_merged+= 1
                 f_inc += 1
             t += [time.time()]
@@ -386,15 +400,7 @@ class SemanticKittiDataset(PointCloudDataset):
             #########################
             
             # Subsample merged frames
-            
-            in_pts, in_fts, in_lbls = grid_subsampling(
-                merged_points,
-                features=merged_coords,
-                labels=merged_labels,
-                sampleDl=self.config.first_subsampling_dl,
-            )
-            
-            #in_pts, in_lbls = grid_subsampling(merged_points,labels=merged_labels,sampleDl=self.config.first_subsampling_dl)
+            in_pts, in_fts, in_lbls = grid_subsampling(merged_points, features=merged_coords, labels=merged_labels, sampleDl=self.config.first_subsampling_dl)
             
             t += [time.time()]
 
@@ -402,7 +408,7 @@ class SemanticKittiDataset(PointCloudDataset):
             n = in_pts.shape[0]
             
             # Safe check
-            if n < 2:
+            if n < 10:
                 continue
 
             # Randomly drop some points (augmentation process and safety for GPU memory consumption)
@@ -411,10 +417,14 @@ class SemanticKittiDataset(PointCloudDataset):
                 in_pts = in_pts[input_inds, :]
                 in_fts = in_fts[input_inds, :]
                 in_lbls = in_lbls[input_inds]
+                #if self.set in ["validation", "test"]:      # AJOUT DE CETTE LIGNE
+                #    o_labels = o_labels[input_inds]         # AJOUT DE CETTE LIGNE
                 n = input_inds.shape[0]
 
             t += [time.time()]
-
+            
+            #write_ply("/home/willalbert20/Documents/out/cloud"+batch_i.__str__()+".ply", [in_pts, in_lbls], ['x', 'y', 'z', 'labels'])   # Donne une sphere
+            
             # Before augmenting, compute reprojection inds (only for validation and test)
             if self.set in ["validation", "test"]:
 
@@ -431,7 +441,9 @@ class SemanticKittiDataset(PointCloudDataset):
             else:
                 proj_inds = np.zeros((0,))
                 reproj_mask = np.zeros((0,))
-
+                
+            
+                
             t += [time.time()]
 
             # Data augmentation
@@ -476,7 +488,7 @@ class SemanticKittiDataset(PointCloudDataset):
         scales = np.array(s_list, dtype=np.float32)
         rots = np.stack(R_list, axis=0)
         
-        #write_ply("/scratch/wialb/testInput/"+'merged'+batch_i.__str__()+".ply", [stacked_points, labels, features], ['x', 'y', 'z', 'labels', 'features'])   # Donne une sphere
+        #write_ply("/home/willalbert20/Documents/out/"+'merged'+batch_i.__str__()+".ply", [stacked_points, labels], ['x', 'y', 'z', 'labels'])   # Donne une sphere
         
         # Input features (Use reflectance, input height or all coordinates)
         stacked_features = np.ones_like(stacked_points[:, :1], dtype=np.float32)
@@ -668,6 +680,7 @@ class SemanticKittiDataset(PointCloudDataset):
                     frame_mode = "multi"
                 seq_stat_file = join(
                     self.path,
+                    "inputs",
                     self.set,
                     "seq_stat",
                     seq,
@@ -698,7 +711,7 @@ class SemanticKittiDataset(PointCloudDataset):
                     seq_proportions = np.zeros((self.num_classes,), dtype=np.int32)
 
                     # Sequence path
-                    seq_path = join(self.path, self.set, "sequences", seq)
+                    seq_path = join(self.path, "inputs", self.set, "sequences", seq)
 
                     # Read all frames
 
@@ -1417,7 +1430,7 @@ class SemanticKittiCustomBatch:
         self.reproj_masks = input_list[ind]
         ind += 1
         self.val_labels = input_list[ind]
-
+        
         return
 
     def pin_memory(self):

@@ -43,6 +43,10 @@ from sklearn.neighbors import KDTree
 
 from models.blocks import KPConv
 
+# For loging
+import wandb
+import pandas as pd
+
 
 # ----------------------------------------------------------------------------------------------------------------------
 #
@@ -87,8 +91,10 @@ class ModelTrainer:
         # Choose to train on CPU or GPU
         if on_gpu and torch.cuda.is_available():
             self.device = torch.device("cuda:0")
+            print("\nUsing GPU")
         else:
             self.device = torch.device("cpu")
+            print("\nNOT Using GPU")
         net.to(self.device)
 
         ##########################
@@ -117,7 +123,9 @@ class ModelTrainer:
                 makedirs(config.saving_path)
             config.save()
             
-        self.best_mIoU = 0
+
+        
+        self.best_mVal_IoU = 0
 
         return
 
@@ -189,14 +197,14 @@ class ModelTrainer:
                 outputs = net(batch, config)
                 loss = net.loss(outputs, batch.labels)
                 acc = net.accuracy(outputs, batch.labels)
-
+                
                 t += [time.time()]
 
                 # Backward + optimize
                 loss.backward()
 
                 if config.grad_clip_norm > 0:
-                    # torch.nn.utils.clip_grad_norm_(net.parameters(), config.grad_clip_norm) # What is this?
+                    #torch.nn.utils.clip_grad_norm_(net.parameters(), config.grad_clip_norm) # What is this?
                     torch.nn.utils.clip_grad_value_(net.parameters(), config.grad_clip_norm)
                 self.optimizer.step()
 
@@ -248,10 +256,12 @@ class ModelTrainer:
 
             # Update learning rate
             if self.epoch in config.lr_decays:
+                print()
                 for param_group in self.optimizer.param_groups:
-                    print("Lr avant maj: ", param_group['lr'], "\n")
+                    print("Lr avant maj: ", param_group['lr'])
                     param_group['lr'] *= config.lr_decays[self.epoch]
-                    print("Lr apres maj: ", param_group['lr'], "\n")
+                    print("Lr apres maj: ", param_group['lr'])
+                print()
 
             # Update epoch
             self.epoch += 1
@@ -712,7 +722,7 @@ class ModelTrainer:
 
             # Forward pass
             outputs = net(batch, config)
-
+            
             # Get probs and labels
             stk_probs = softmax(outputs).cpu().detach().numpy()
             lengths = batch.lengths[0].cpu().numpy()
@@ -721,10 +731,10 @@ class ModelTrainer:
             r_mask_list = batch.reproj_masks
             labels_list = batch.val_labels
             torch.cuda.synchronize(self.device)
-
+            
             # Get predictions and labels per instance
             # ***************************************
-
+            
             i0 = 0
             for b_i, length in enumerate(lengths):
 
@@ -735,7 +745,7 @@ class ModelTrainer:
                 frame_labels = labels_list[b_i]
                 s_ind = f_inds[b_i, 0]
                 f_ind = f_inds[b_i, 1]
-
+                
                 # Project predictions on the frame points
                 proj_probs = probs[proj_inds]
 
@@ -760,11 +770,12 @@ class ModelTrainer:
                 else:
                     frame_preds = np.zeros(frame_labels.shape, dtype=np.uint8)
                 frame_preds[proj_mask] = preds.astype(np.uint8)
+                #frame_preds = preds.astype(np.uint8)
                 np.save(filepath, frame_preds)
 
                 # Save some of the frame pots
-                if f_ind % 20 == 0:
-                    seq_path = join(val_loader.dataset.path, 'validation/sequences', val_loader.dataset.sequences[s_ind])
+                if f_ind % 20 == -1:#0:
+                    seq_path = join(val_loader.dataset.path, 'inputs/validation/sequences', val_loader.dataset.sequences[s_ind])
                     velo_file = join(seq_path, val_loader.dataset.frames[s_ind][f_ind] + '.ply')
                     
                     # Read points
@@ -778,7 +789,11 @@ class ModelTrainer:
                     write_ply(filepath[:-4] + '_pots.ply',
                               [points, frame_labels, frame_preds],
                               ['x', 'y', 'z', 'gt', 'pre'])
-
+                    
+                #print("\nframe_labels.shape: ", frame_labels.shape, "\n")
+                #print("\nframe_preds.astype(np.int32): ", frame_preds.astype(np.int32), "\n")
+                #print("\nval_loader.dataset.label_values: ", val_loader.dataset.label_values, "\n")
+                
                 # Update validation confusions
                 frame_C = fast_confusion(frame_labels,
                                          frame_preds.astype(np.int32),
@@ -828,6 +843,7 @@ class ModelTrainer:
         # Remove ignored labels from confusions
         for l_ind, label_value in reversed(list(enumerate(val_loader.dataset.label_values))):
             if label_value in val_loader.dataset.ignored_labels:
+
                 C = np.delete(C, l_ind, axis=0)
                 C = np.delete(C, l_ind, axis=1)
 
@@ -869,8 +885,6 @@ class ModelTrainer:
         mVal_IoU = 100 * np.mean(val_IoUs)
         print('{:s} :     val mIoU = {:.1f} %'.format(config.dataset, mVal_IoU))
         
-        IoUs = IoUs#, mIoU]
-        val_IoUs = val_IoUs#, mVal_IoU]
         
         # Saving (optionnal)
         if config.saving:
@@ -895,26 +909,28 @@ class ModelTrainer:
                 else:
                     with open(test_file, "w") as text_file:
                         text_file.write(line)
+                        
 
-            # Save checkpoints when mIoU is the best
-            if mIoU > self.best_mIoU:
-                self.best_mIoU = mIoU
+            # Save checkpoints when mVal_IoU is the best
+            if mVal_IoU > self.best_mVal_IoU:
+                self.best_mVal_IoU = mVal_IoU
                 checkpoint_directory = join(config.saving_path, 'checkpoints')
-                checkpoint_path = join(checkpoint_directory, 'chkp_best_mIoU.tar') #'chkp_{:04d}.tar'.format(self.epoch + 1))
+                checkpoint_path = join(checkpoint_directory, 'chkp_best_mVal_IoU.tar') #'chkp_{:04d}.tar'.format(self.epoch + 1))
                 torch.save(save_dict, checkpoint_path)
                 
-                epoch_IoU_file = join(config.saving_path, "checkpoints/epoch_mIoU.txt")
+                epoch_IoU_file = join(config.saving_path, "checkpoints/epoch_mVal_IoUs.txt")
                 with open(epoch_IoU_file, "w") as epoch_IoU_file:
-                    to_write = ['epoch: ', epoch+1, '\n IoUs: ', IoUs, '\n mIoU: ', mIoU, '\n val_IoUs: ', val_IoUs, '\n mVal_IoU: ', mVal_IoU]
+                    to_write = ['epoch: ', epoch-1, '\n IoUs: ', IoUs, '\n mIoU: ', mIoU, '\n val_IoUs: ', val_IoUs, '\n mVal_IoU: ', mVal_IoU]
                     epoch_IoU_file.write(to_write.__str__())
                     epoch_IoU_file.close()
             
-            epoch_ALL_IoUs_file = join(config.saving_path, "epoch_ALL_IoUs.txt")
+            epoch_ALL_IoUs_file = join(config.saving_path, "epoch_ALL_mVal_IoUs.txt")
+            
                         
             if not exists(epoch_ALL_IoUs_file):
                 with open(epoch_ALL_IoUs_file, "w") as file:
                     entete = "epoch"
-                    for i in range(1, len(IoUs)+1): entete += ",IoU" + i.__str__()
+                    for i in range(1, len(IoUs)-1): entete += ",IoU" + i.__str__()
                     
                     entete += ",mIoU"
                     for i in range(1, len(val_IoUs)+1): entete += ",valIoU" + i.__str__()
@@ -934,13 +950,17 @@ class ModelTrainer:
                 for i in IoUs: IoUsTxt += "," + i.__str__()
                 for i in val_IoUs: Val_IoUsTxt += "," + i.__str__()
 
-                to_write += "{}{},{}{},{}\n".format(epoch+1, IoUsTxt, mIoU.__str__(), Val_IoUsTxt, mVal_IoU.__str__())
+                to_write += "{}{},{}{},{}\n".format(epoch-1, IoUsTxt, mIoU.__str__(), Val_IoUsTxt, mVal_IoU.__str__())
                 file.write(to_write)
                 file.close()
-
                 
+            # Logging data in WandB
+
+            wandb.log({"mIoU": mIoU, "mVal_IoU": mVal_IoU, "best_mVal_IoU": self.best_mVal_IoU})
+
 
         t6 = time.time()
+
 
         # Display timings
         if debug:
@@ -955,38 +975,3 @@ class ModelTrainer:
             print('\n************************\n')
 
         return
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -36,6 +36,7 @@ from utils.config import Config
 from utils.trainer import ModelTrainer
 from models.architectures import KPFCNN
 
+import wandb
 
 # ----------------------------------------------------------------------------------------------------------------------
 #
@@ -94,27 +95,27 @@ class SemanticKittiConfig(Config):
     ###################
 
     # Radius of the input sphere
-    in_radius = 4.0
-    val_radius = 4.0
+    in_radius = 15.0
+    val_radius = 15.0
     n_frames = 1
-    max_in_points = 80000
-    max_val_points = 80000
+    max_in_points = 12000
+    max_val_points = 12000
 
     # Number of batch
-    batch_num = 10
-    val_batch_num = 10
+    batch_num = 1
+    val_batch_num = 1
 
     # Number of kernel points
     num_kernel_points = 15
 
     # Size of the first subsampling grid in meter
-    first_subsampling_dl = 0.1     #0.06
+    first_subsampling_dl = 0.1 #0.06
 
     # Radius of convolution in "number grid cell". (2.5 is the standard value)
-    conv_radius = 2 #2.5
+    conv_radius = 2.5
 
     # Radius of deformable convolution in "number grid cell". Larger so that deformed kernel can spread out
-    deform_radius = 5.0
+    deform_radius = 4.0
 
     # Radius of the area of influence of each kernel point in "number grid cell". (1.0 is the standard value)
     KP_extent = 1.0
@@ -127,7 +128,7 @@ class SemanticKittiConfig(Config):
 
     # Choice of input features
     first_features_dim = 128
-    in_features_dim = 2
+    in_features_dim = 1#2
 
     # Can the network learn modulations
     modulated = False
@@ -152,9 +153,11 @@ class SemanticKittiConfig(Config):
     max_epoch = 500
 
     # Learning rate management
-    learning_rate = 1e-2
+    learning_rate = 1e-3
     momentum = 0.98
     lr_decays = {i: 0.1 ** (1 / 150) for i in range(1, max_epoch)}
+    
+    
     grad_clip_norm = 100.0
 
     # Number of steps per epochs
@@ -189,7 +192,7 @@ class SemanticKittiConfig(Config):
     # class_w = [1.430, 5.000, 5.000, 4.226, 5.000, 5.000, 5.000, 5.000, 0.719, 2.377,
     #            0.886, 3.863, 0.869, 1.209, 0.594, 3.780, 1.129, 5.000, 5.000]
 
-    # Do we nee to save convergence
+    # Do we need to save convergence
     saving = True
     saving_path = None
 
@@ -201,7 +204,12 @@ class SemanticKittiConfig(Config):
 #
 
 if __name__ == '__main__':
-
+    
+    user = "william-albert124"
+    project = "KPConv_PyTorch"
+    display_name = "CLASS-2023-05-02"
+    wandb.init(entity=user, project=project, name=display_name)
+    
     ############################
     # Initialize the environment
     ############################
@@ -218,15 +226,15 @@ if __name__ == '__main__':
 
     # Choose here if you want to start training from a previous snapshot (None for new training)
     # previous_training_path = 'Log_2020-03-19_19-53-27'
-    previous_training_path = ''
+    previous_training_path = '' #'Log_2023-04-28_16-58-04'
 
     # Choose index of checkpoint to start from. If None, uses the latest chkp
-    chkp_choice = None #'chkp_best_mIoU.tar'
+    chkp_choice = None #'chkp_best_mIoU.tar' 
     if previous_training_path:
 
         # Find all snapshot in the chosen training folder
         chkp_path = os.path.join('results', previous_training_path, 'checkpoints')
-        #chkps = [f for f in os.listdir(chkp_path) if f[:4] == 'chkp']
+        #chkps = [f for f in os.listdir(chkp_path)  if f[:4] == 'chkp']
 
         # Find which snapshot to restore
         if chkp_choice is None:
@@ -274,9 +282,8 @@ if __name__ == '__main__':
                                   num_workers=config.input_threads,
                                   pin_memory=True)
     
-    # for i , batch in enumerate(training_loader):
-    #     a=1
-        # write_ply("allo/"+str(i)+".ply", [batch.points[0].numpy(), batch.labels.numpy().astype(np.int32)], ['x', 'y', 'z', 'labels'])
+    #write_ply("/home/willalbert20/Documents/out/batch.ply", [batch.points[0].numpy(), batch.labels.numpy().astype(np.int32)], ['x', 'y', 'z', 'labels'])
+
         
     
     test_loader = DataLoader(test_dataset,
@@ -330,6 +337,8 @@ if __name__ == '__main__':
     
     # Training    
     trainer.train(net, training_loader, test_loader, config)
+    
+    wandb.finish()
     
     # print('Forcing exit now')
     # os.kill(os.getpid(), signal.SIGINT)

@@ -1,0 +1,6 @@
+*.npy
+*.ply
+*.pyc
+*wandb*
+*.tar
+

@@ -93,9 +93,7 @@ def fast_confusion(true, pred, label_values=None):
         # Reshape confusion in a matrix
         return vec_conf.reshape((num_classes, num_classes))
 
-
     else:
-
         # Ensure no negative classes
         if label_values[0] < 0:
             raise ValueError('Unsupported negative classes')
@@ -197,7 +195,6 @@ def smooth_metrics(confusions, smooth_n=0, ignore_unclassified=False):
 
     # Compute IoU
     IoU = F1 / (2 - F1)
-
     return PRE, REC, F1, IoU, ACC
 
 
