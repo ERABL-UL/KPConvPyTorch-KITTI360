@@ -261,9 +261,7 @@ class ModelTester:
                 lengths = batch.lengths[0].cpu().numpy()
                 in_inds = batch.input_inds.cpu().numpy()
                 cloud_inds = batch.cloud_inds.cpu().numpy()
-                torch.cuda.synGMT-1003 le mercredi 5 avril de 18h30 à 21h10;
-
-GMT-2006 le lundi 17 avril l’horaire est à confirmer. L’examen commencera à 17h30 ou 18h30 et durera 3h.chronize(self.device)
+                torch.cuda.synchronize(self.device)
 
                 # Get predictions and labels per instance
                 # ***************************************
@@ -467,7 +465,7 @@ GMT-2006 le lundi 17 avril l’horaire est à confirmer. L’examen commencera �
 
         return
 
-    def slam_segmentation_test(self, net, test_loader, config, num_votes=350, debug=True):
+    def slam_segmentation_test(self, net, test_loader, config, num_votes=100, debug=True):
         """
         Test method for slam segmentation models
         """
@@ -477,7 +475,7 @@ GMT-2006 le lundi 17 avril l’horaire est à confirmer. L’examen commencera �
         ############
 
         # Choose validation smoothing parameter (0 for no smothing, 0.99 for big smoothing)
-        test_smooth = 0.5
+        test_smooth = 0.95
         last_min = -0.5
         softmax = torch.nn.Softmax(1)
 
@@ -529,6 +527,10 @@ GMT-2006 le lundi 17 avril l’horaire est à confirmer. L’examen commencera �
         while True:
             print('Initialize workers')
             for i, batch in enumerate(test_loader):
+                if len(batch.labels)<10:
+                    print("tester.py: batch<10")
+                    continue
+                
                 # New time
                 t = t[-1:]
                 t += [time.time()]
@@ -540,10 +542,7 @@ GMT-2006 le lundi 17 avril l’horaire est à confirmer. L’examen commencera �
                     batch.to(self.device)
 
                 # Forward pass
-                try:
-                    outputs = net(batch, config)
-                except:
-                    continue
+                outputs = net(batch, config)
                 #write_ply("testInput/batch"+i.__str__()+t.__str__()+".ply", batch.points[0].cpu().numpy(), ["x","y","z"])
                 
                 # Get probs and labels
@@ -562,7 +561,6 @@ GMT-2006 le lundi 17 avril l’horaire est à confirmer. L’examen commencera �
 
                 i0 = 0
                 for b_i, length in enumerate(lengths):
-
                     # Get prediction
                     probs = stk_probs[i0:i0 + length]
                     proj_inds = r_inds_list[b_i]
@@ -570,14 +568,15 @@ GMT-2006 le lundi 17 avril l’horaire est à confirmer. L’examen commencera �
                     frame_labels = labels_list[b_i]
                     s_ind = f_inds[b_i, 0]
                     f_ind = f_inds[b_i, 1]
-
+                    
                     # Project predictions on the frame points
                     proj_probs = probs[proj_inds]
 
                     # Safe check if only one point:
                     if proj_probs.ndim < 2:
+                        print("AlloAlloAllo tester.py 2")
                         proj_probs = np.expand_dims(proj_probs, 0)
-
+                        
                     # Save probs in a binary file (uint8 format for lighter weight)
                     seq_name = test_loader.dataset.sequences[s_ind]
                     if test_loader.dataset.set == 'validation':
@@ -590,7 +589,7 @@ GMT-2006 le lundi 17 avril l’horaire est à confirmer. L’examen commencera �
 
                     filepath = join(test_path, folder, filename)
                     if exists(filepath):
-                        frame_probs_uint8 = np.load(filepath)
+                        frame_probs_uint8 = np.load(filepath, allow_pickle=True)
                     else:
                         frame_probs_uint8 = np.zeros((proj_mask.shape[0], nc_model), dtype=np.uint8)
                     frame_probs = frame_probs_uint8[proj_mask, :].astype(np.float32) / 255
@@ -614,7 +613,7 @@ GMT-2006 le lundi 17 avril l’horaire est à confirmer. L’examen commencera �
 
                         # Save some of the frame pots
                         if f_ind % 20 == 0:
-                            seq_path = join(test_loader.dataset.path, 'test/sequences', test_loader.dataset.sequences[s_ind])
+                            seq_path = join(test_loader.dataset.path, 'inputs/test/sequences', test_loader.dataset.sequences[s_ind])
                             velo_file = join(seq_path, test_loader.dataset.frames[s_ind][f_ind] + '.ply')
                             # Read points
                             frame_points = read_ply(velo_file)
@@ -660,7 +659,7 @@ GMT-2006 le lundi 17 avril l’horaire est à confirmer. L’examen commencera �
                                                                                  axis=1)].astype(np.int32)
                         
                         # Load points
-                        seq_path = join(test_loader.dataset.path, "test/sequences", test_loader.dataset.sequences[s_ind])
+                        seq_path = join(test_loader.dataset.path, "inputs/test/sequences", test_loader.dataset.sequences[s_ind])
                         velo_file = join(seq_path, test_loader.dataset.frames[s_ind][f_ind] + ".ply")
                         
                         # Read points
@@ -682,9 +681,7 @@ GMT-2006 le lundi 17 avril l’horaire est à confirmer. L’examen commencera �
                         
                         # Write .ply predictions file where -> 0:not predicted yet, 1:flat, 2:construction, 3:object,  4:vegetation, 5:terrain, 6:building, 7:vehicle
                         
-                        write_ply(predpath,
-                                  [points, frame_preds],
-                                  ['x', 'y', 'z', 'pre'])
+                        #write_ply(predpath, [points, frame_preds], ['x', 'y', 'z', 'pre'])
 
                     # Stack all prediction for this epoch
                     i0 += length
@@ -703,7 +700,8 @@ GMT-2006 le lundi 17 avril l’horaire est à confirmer. L’examen commencera �
                                          1000 * (mean_dt[1]),
                                          1000 * (mean_dt[2])))
 
-
+            write_ply(predpath, [points, frame_preds], ['x', 'y', 'z', 'pre'])
+            
             # Update minimum of potentials
             new_min = torch.min(test_loader.dataset.potentials)
             print('Test epoch {:d}, end. Min potential = {:.1f}'.format(test_epoch, new_min))

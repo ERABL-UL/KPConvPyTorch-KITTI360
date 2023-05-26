@@ -53,7 +53,7 @@ class Config:
     in_points_dim = 3
 
     # Dimension of input features
-    in_features_dim = 2
+    in_features_dim = 1#2
 
     # Radius of the input sphere (ignored for models, only used for point clouds)
     in_radius = 7.0
@@ -73,7 +73,7 @@ class Config:
     invar_mode = ''
 
     # Dimension of the first feature maps
-    first_features_dim = 64
+    first_features_dim = 128# 64
 
     # Batch normalization parameters
     use_batch_norm = True
@@ -90,13 +90,13 @@ class Config:
     num_kernel_points = 15
 
     # Size of the first subsampling grid in meter
-    first_subsampling_dl = 0.06
+    first_subsampling_dl = 0.1#0.06
 
     # Radius of convolution in "number grid cell". (2.5 is the standard value)
     conv_radius = 2.5
 
     # Radius of deformable convolution in "number grid cell". Larger so that deformed kernel can spread out
-    deform_radius = 8.0
+    deform_radius = 4.0
 
     # Kernel point influence radius
     KP_extent = 1.0
@@ -112,15 +112,15 @@ class Config:
     fixed_kernel_points = 'none'
 
     # Use modulateion in deformable convolutions
-    modulated = True
+    modulated = False
 
     # For SLAM datasets like SemanticKitti number of frames used (minimum one)
     n_frames = 1
 
     # For SLAM datasets like SemanticKitti max number of point in input cloud + validation
-    max_in_points = 13000
-    val_radius = 8.0
-    max_val_points = 13000
+    max_in_points = 12000
+    val_radius = 15.0
+    max_val_points = 12000
 
     #####################
     # Training parameters
@@ -138,11 +138,11 @@ class Config:
 
     # Augmentation parameters
     augment_scale_anisotropic = True
-    augment_scale_min = 0.9
-    augment_scale_max = 1.1
-    augment_symmetries = [False, False, False]
+    augment_symmetries = [True, False, False]#[False, False, False]
+    augment_scale_min = 0.8#0.9
+    augment_scale_max = 1.2#1.1
     augment_rotation = 'vertical'
-    augment_noise = 0.005
+    augment_noise = 0.001#0.005
     #augment_color = 0.7
 
     # Augment with occlusions (not implemented yet)

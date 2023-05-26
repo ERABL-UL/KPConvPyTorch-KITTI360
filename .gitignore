@@ -3,4 +3,4 @@
 *.pyc
 *wandb*
 *.tar
-
+*__pycache__*

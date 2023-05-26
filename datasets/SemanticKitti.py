@@ -62,7 +62,7 @@ class SemanticKittiDataset(PointCloudDataset):
         ##########################
         
         # Dataset folder
-        self.path = "/home/willalbert20/Documents"
+        self.path = "/home/willalbert/Documents"
 
         # Type of task conducted on this dataset
         self.dataset_task = "slam_segmentation"
@@ -70,7 +70,7 @@ class SemanticKittiDataset(PointCloudDataset):
         # Training or test set
         self.set = set
         self.train_list = [0, 2, 3, 4, 5, 6, 7, 9, 10]
-        self.test_list = [8]#, 18]
+        self.test_list = [88]#[8, 18]
         # Get a list of sequences
         if self.set == "training":
             self.sequences = ["{:02d}".format(i) for i in self.train_list]
@@ -124,8 +124,7 @@ class SemanticKittiDataset(PointCloudDataset):
         self.init_labels()
 
         # List of classes ignored during training (can be empty)
-        #self.ignored_labels = np.sort([0, 5, 6])    # [void, sky, person]
-        self.ignored_labels = np.sort([0])    # [void, sky, person]
+        self.ignored_labels = np.sort([0])    # [void]
 
         ##################
         # Other parameters
@@ -337,7 +336,7 @@ class SemanticKittiDataset(PointCloudDataset):
                         # Predicted labels
                         wanted_ind = np.random.choice(new_points.shape[0])
                     
-                    elif self.set == "test" and exists("/home/willalbert20/Documents/test/Log_2023-02-20_17-17-48/predictions"):
+                    elif self.set == "test" and exists("/home/willalbert20/Documents/test/Log_2023-04-28_21-27-45_mIoU75_CATEG/predictions"):
                         # Selection non aleatoire du centre de sphere / Not random center sphere selection
                         # Si un point a une prediction de 0, on le selectionne. S'il n'y en a pas, on selectionne aleatoirement
                         if s_ind == 0: predsFileSeq = 8

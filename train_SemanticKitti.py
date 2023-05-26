@@ -109,7 +109,7 @@ class SemanticKittiConfig(Config):
     num_kernel_points = 15
 
     # Size of the first subsampling grid in meter
-    first_subsampling_dl = 0.1 #0.06
+    first_subsampling_dl = 0.1 
 
     # Radius of convolution in "number grid cell". (2.5 is the standard value)
     conv_radius = 2.5
@@ -172,9 +172,9 @@ class SemanticKittiConfig(Config):
     # Augmentations
     augment_scale_anisotropic = True
     augment_symmetries = [True, False, False]
-    augment_rotation = 'vertical'
     augment_scale_min = 0.8
     augment_scale_max = 1.2
+    augment_rotation = 'vertical'
     augment_noise = 0.001
     #augment_color = 0.8
 
@@ -207,7 +207,7 @@ if __name__ == '__main__':
     
     user = "william-albert124"
     project = "KPConv_PyTorch"
-    display_name = "CLASS-2023-05-02"
+    display_name = "CLASS-2023-05-19"
     wandb.init(entity=user, project=project, name=display_name)
     
     ############################

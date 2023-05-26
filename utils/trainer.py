@@ -123,8 +123,7 @@ class ModelTrainer:
                 makedirs(config.saving_path)
             config.save()
             
-
-        
+        self.best_mVal_Mat = ''
         self.best_mVal_IoU = 0
 
         return
@@ -859,7 +858,8 @@ class ModelTrainer:
         # Sum all validation confusions
         C_tot = [np.sum(seq_C, axis=0) for seq_C in val_loader.dataset.val_confs if len(seq_C) > 0]
         C_tot = np.sum(np.stack(C_tot, axis=0), axis=0)
-
+        
+        mVal_Mat = ''
         if debug:
             s = '\n'
             for cc in C_tot:
@@ -867,6 +867,8 @@ class ModelTrainer:
                     s += '{:8.1f} '.format(c)
                 s += '\n'
             print(s)
+            mVal_Mat += s
+            
 
         # Remove ignored labels from confusions
         for l_ind, label_value in reversed(list(enumerate(val_loader.dataset.label_values))):
@@ -913,31 +915,38 @@ class ModelTrainer:
 
             # Save checkpoints when mVal_IoU is the best
             if mVal_IoU > self.best_mVal_IoU:
+                self.best_mVal_Mat = mVal_Mat
                 self.best_mVal_IoU = mVal_IoU
                 checkpoint_directory = join(config.saving_path, 'checkpoints')
                 checkpoint_path = join(checkpoint_directory, 'chkp_best_mVal_IoU.tar') #'chkp_{:04d}.tar'.format(self.epoch + 1))
                 torch.save(save_dict, checkpoint_path)
                 
                 epoch_IoU_file = join(config.saving_path, "checkpoints/epoch_mVal_IoUs.txt")
-                with open(epoch_IoU_file, "w") as epoch_IoU_file:
-                    to_write = ['epoch: ', epoch-1, '\n IoUs: ', IoUs, '\n mIoU: ', mIoU, '\n val_IoUs: ', val_IoUs, '\n mVal_IoU: ', mVal_IoU]
+                open(epoch_IoU_file, "w").close()
+                with open(epoch_IoU_file, "a") as epoch_IoU_file:
+                    to_write = "epoch: {}, \nIoUs: {}, \nmIoU: {}, \nval_IoUs: {}, \nmVal_IoU: {}\n\n".format(epoch-1, IoUs.__str__(), mIoU.__str__(), val_IoUs.__str__(), mVal_IoU.__str__())
                     epoch_IoU_file.write(to_write.__str__())
+                    epoch_IoU_file.write(mVal_Mat.__str__())
                     epoch_IoU_file.close()
             
+            print('{:s} :     best val mIoU = {:.1f} %'.format(config.dataset, self.best_mVal_IoU))
             epoch_ALL_IoUs_file = join(config.saving_path, "epoch_ALL_mVal_IoUs.txt")
             
                         
             if not exists(epoch_ALL_IoUs_file):
                 with open(epoch_ALL_IoUs_file, "w") as file:
                     entete = "epoch"
-                    for i in range(1, len(IoUs)-1): entete += ",IoU" + i.__str__()
-                    
+                    for dictKey, dictValue in val_loader.dataset.label_to_names.items():
+                        if dictKey != 0:
+                            entete += ",IoU_" + dictValue.__str__()
                     entete += ",mIoU"
-                    for i in range(1, len(val_IoUs)+1): entete += ",valIoU" + i.__str__()
                     
+                    for dictKey, dictValue in val_loader.dataset.label_to_names.items():
+                        if dictKey != 0:
+                            entete += ",valIoU_" + dictValue.__str__()
                     entete += ",mVal_IoU\n"
                     
-                    to_write = entete   #epoch,IoU1,IoU2,IoU3,...,mIoU,valIoU1,valIoU2,valIoU3,...,mValIoU
+                    to_write = entete   #epoch,IoU_road,IoU_sidewalk,...,mIoU,valIoU_road,valIoU_sidewalk,...,mValIoU
                     
                     file.write(to_write)
                     file.close()

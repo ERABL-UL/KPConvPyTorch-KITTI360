@@ -86,7 +86,9 @@ def model_choice(chosen_log):
 #
 
 if __name__ == '__main__':
-
+    os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=100\" -a \"[fan:1]/GPUTargetFanSpeed=100\"")
+    os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=100\" -a \"[fan:1]/GPUTargetFanSpeed=100\"")
+    
     ###############################
     # Choose the model to visualize
     ###############################
@@ -96,7 +98,7 @@ if __name__ == '__main__':
     #       > 'last_XXX': Automatically retrieve the last trained model on dataset XXX
     #       > '(old_)results/Log_YYYY-MM-DD_HH-MM-SS': Directly provide the path of a trained model
 
-    chosen_log = 'results/Log_2023-02-20_17-17-48'
+    chosen_log = 'results/Log_2023-05-15_19-03-10_CATEG69'
 
     # Choose the index of the checkpoint to load OR None if you want to load the current checkpoint
     chkp_idx = None
@@ -126,7 +128,7 @@ if __name__ == '__main__':
 
     # Find which snapshot to restore
     if chkp_idx is None:
-        chosen_chkp = 'chkp_best_mIoU.tar'
+        chosen_chkp = 'chkp_best_mVal_IoU.tar'
     else:
         chosen_chkp = np.sort(chkps)[chkp_idx]
     chosen_chkp = os.path.join(chosen_log, 'checkpoints', chosen_chkp)
@@ -140,13 +142,10 @@ if __name__ == '__main__':
     ##################################
 
     # Change parameters for the test here. For example, you can stop augmenting the input data.
-
-    #config.augment_noise = 0.0001
-    #config.augment_symmetries = False
-    #config.batch_num = 3
-    config.in_radius = 5
+    config.batch_num = 1
+    config.in_radius = 15.0
     config.validation_size = 100
-    config.input_threads = 10
+    config.input_threads = 24
 
     ##############
     # Prepare Data
@@ -160,7 +159,8 @@ if __name__ == '__main__':
         set = 'validation'
     else:
         set = 'test'
-
+    print(config.dataset)
+    print(set)
     # Initiate dataset
     if config.dataset == 'ModelNet40':
         test_dataset = ModelNet40Dataset(config, train=False)
@@ -170,7 +170,7 @@ if __name__ == '__main__':
         test_dataset = S3DISDataset(config, set='validation', use_potentials=True)
         test_sampler = S3DISSampler(test_dataset)
         collate_fn = S3DISCollate
-    elif config.dataset == 'SemanticKitti':
+    elif config.dataset == 'Kitti-360':
         test_dataset = SemanticKittiDataset(config, set=set, balance_classes=False)
         test_sampler = SemanticKittiSampler(test_dataset)
         collate_fn = SemanticKittiCollate
@@ -213,3 +213,7 @@ if __name__ == '__main__':
         tester.slam_segmentation_test(net, test_loader, config)
     else:
         raise ValueError('Unsupported dataset_task for testing: ' + config.dataset_task)
+        
+    
+    os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=30\" -a \"[fan:1]/GPUTargetFanSpeed=30\"")
+    os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=30\" -a \"[fan:1]/GPUTargetFanSpeed=30\"")
