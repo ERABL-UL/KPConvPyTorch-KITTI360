@@ -207,8 +207,13 @@ if __name__ == '__main__':
     
     user = "william-albert124"
     project = "KPConv_PyTorch"
-    display_name = "CLASS-2023-05-19"
-    wandb.init(entity=user, project=project, name=display_name)
+    display_name = "CATEG-2023-06-01_FT"
+    notes = "void, flat, construction, object, vegetation, building, vehicle"
+
+    wandb.init(entity=user, project=project, name=display_name, notes=notes)
+    
+    os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=70\" -a \"[fan:1]/GPUTargetFanSpeed=70\"")
+    os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=70\" -a \"[fan:1]/GPUTargetFanSpeed=70\"")
     
     ############################
     # Initialize the environment
@@ -226,10 +231,10 @@ if __name__ == '__main__':
 
     # Choose here if you want to start training from a previous snapshot (None for new training)
     # previous_training_path = 'Log_2020-03-19_19-53-27'
-    previous_training_path = '' #'Log_2023-04-28_16-58-04'
+    previous_training_path = 'Log_2023-05-31_18-32-23'#''
 
     # Choose index of checkpoint to start from. If None, uses the latest chkp
-    chkp_choice = None #'chkp_best_mIoU.tar' 
+    chkp_choice = 'chkp_best_mVal_IoU.tar' #None
     if previous_training_path:
 
         # Find all snapshot in the chosen training folder
@@ -245,7 +250,8 @@ if __name__ == '__main__':
 
     else:
         chosen_chkp = None
-
+    
+    print(chosen_chkp)
     ##############
     # Prepare Data
     ##############
@@ -263,6 +269,13 @@ if __name__ == '__main__':
     # Get path from argument if given
     if len(sys.argv) > 1:
         config.saving_path = sys.argv[1]
+        
+    ft = True
+    if ft:
+        config.learning_rate = 1e-3
+        config.epoch_steps = 25
+        config.validation_size = 13
+        config.max_epoch = 80
 
     # Initialize datasets
     training_dataset = SemanticKittiDataset(config, set='training',
@@ -339,6 +352,9 @@ if __name__ == '__main__':
     trainer.train(net, training_loader, test_loader, config)
     
     wandb.finish()
+    
+    os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=30\" -a \"[fan:1]/GPUTargetFanSpeed=30\"")
+    os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=30\" -a \"[fan:1]/GPUTargetFanSpeed=30\"")
     
     # print('Forcing exit now')
     # os.kill(os.getpid(), signal.SIGINT)

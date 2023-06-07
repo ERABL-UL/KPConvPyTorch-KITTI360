@@ -16,7 +16,7 @@ trueFile = "/home/willalbert/Documents/kpConv_Nerf/classesSCALED.ply"
 pointCloudTrue = ost.read_ply(trueFile)
 true = pointCloudTrue['scalar_Classe']
 
-folder = "/home/willalbert/Documents/GitHub/KPConvPyTorch/test/Log_2023-05-15_19-03-10_CATEG69/predictions/"
+folder = "/home/willalbert/Documents/kpConv_Nerf/confMat/"
 dir_list = os.listdir(folder)
 
 conf = []
@@ -28,6 +28,6 @@ for i, plyFile in enumerate(dir_list):
         
         conf.append(confusion_matrix(true, pred))
     
-with open("/home/willalbert/Documents/GitHub/KPConvPyTorch/test/Log_2023-05-15_19-03-10_CATEG69/predictions/confMat.txt", 'w') as txtFile:
+with open("/home/willalbert/Documents/kpConv_Nerf/confMat/confMat/confMat.txt", 'w') as txtFile:
     txtFile.writelines('\n\n'.join(str(i) for i in conf))
     txtFile.close()
