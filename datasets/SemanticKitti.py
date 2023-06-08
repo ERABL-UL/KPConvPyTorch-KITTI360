@@ -60,17 +60,17 @@ class SemanticKittiDataset(PointCloudDataset):
         ##########################
         # Parameters for the files
         ##########################
-
+        
         # Dataset folder
-        self.path = "/scratch/wialb"
+        self.path = "/home/willalbert/Documents"
 
         # Type of task conducted on this dataset
         self.dataset_task = "slam_segmentation"
 
         # Training or test set
         self.set = set
-        self.train_list = [0, 2, 3, 4, 5, 6, 7, 9, 10]
-        self.test_list = [8]#, 18]
+        self.train_list = [88]#[0, 2, 3, 4, 5, 6, 7, 9, 10]
+        self.test_list = [8, 18] #[88]
         # Get a list of sequences
         if self.set == "training":
             self.sequences = ["{:02d}".format(i) for i in self.train_list]
@@ -83,13 +83,15 @@ class SemanticKittiDataset(PointCloudDataset):
 
         # List all files in each sequence
         self.frames = []
+        
         for seq in self.sequences:
-            velo_path = join(self.path, self.set, "sequences", seq)
+            velo_path = join(self.path, "inputs", self.set, "sequences", seq)
             frames = np.sort(
                 [vf[:-4] for vf in listdir(velo_path) if vf.endswith(".ply")]
             )  # [:-4] pour enlever le ".ply"
 
             self.frames.append(frames)
+        
 
         ###########################
         # Object classes parameters
@@ -122,7 +124,7 @@ class SemanticKittiDataset(PointCloudDataset):
         self.init_labels()
 
         # List of classes ignored during training (can be empty)
-        self.ignored_labels = np.sort([0])
+        self.ignored_labels = np.sort([0])    # [void]
 
         ##################
         # Other parameters
@@ -195,6 +197,9 @@ class SemanticKittiDataset(PointCloudDataset):
         )
         self.worker_waiting.share_memory_()
         self.worker_lock = Lock()
+        
+        # self.writer = SummaryWriter(f'runs/testSumWrtr')
+        # self.evaluator = iouEval(n_classes=config.num_classes, ignore=self.ignored_labels)
 
         return
 
@@ -203,6 +208,7 @@ class SemanticKittiDataset(PointCloudDataset):
         Return the length of data here
         """
         return len(self.frames)
+    
 
     def __getitem__(self, batch_i):
         """
@@ -282,7 +288,7 @@ class SemanticKittiDataset(PointCloudDataset):
                          continue                                                                                       #
 
                 # Path of points and labels
-                seq_path = join(self.path, self.set, "sequences", self.sequences[s_ind])
+                seq_path = join(self.path, "inputs", self.set, "sequences", self.sequences[s_ind])
                 velo_file = join(seq_path, self.frames[s_ind][f_ind - f_inc] + ".ply")
                 
                 if self.set == "test":
@@ -303,21 +309,22 @@ class SemanticKittiDataset(PointCloudDataset):
                     sem_labels = np.zeros((frame_points.shape[0],), dtype=np.int32)
                 else:
                     # Read labels
-                    sem_labels = read_ply(label_file)["semantic"]
+                    sem_labels = read_ply(label_file)["scalar_label"].astype(np.int32)
                     sem_labels = self.learning_map[sem_labels]
-
+                    
                 # Apply pose (without np.dot to avoid multi-threading)
                 # hpoints = np.hstack((points[:, :3], np.ones_like(points[:, :1])))
                 # new_points = hpoints.dot(pose.T)
                 # new_points = np.sum(np.expand_dims(hpoints, 2) * pose.T, axis=1)
                 
                 new_points = points    # Complete point cloud / Nuage de points complet
+                
 
                 # In case of validation, keep the original points in memory
                 if self.set in ["validation", "test"] and f_inc == 0:
                     o_pts = new_points.astype(np.float32)
                     o_labels = sem_labels.astype(np.int32)
-
+                
                 # In case radius smaller than 50m, chose new center on a point of the wanted class or not
                 if self.in_R < 50.0 and f_inc == 0:
                     if self.balance_classes:
@@ -328,13 +335,13 @@ class SemanticKittiDataset(PointCloudDataset):
                         # Predicted labels
                         wanted_ind = np.random.choice(new_points.shape[0])
                     
-                    elif exists("/scratch/wialb/test/Log_2023-02-20_17-17-48/predictions"):
+                    elif self.set == "test" and exists("/home/willalbert20/Documents/test/Log_2023-04-28_21-27-45_mIoU75_CATEG/predictions"):
                         # Selection non aleatoire du centre de sphere / Not random center sphere selection
                         # Si un point a une prediction de 0, on le selectionne. S'il n'y en a pas, on selectionne aleatoirement
                         if s_ind == 0: predsFileSeq = 8
                         else: predsFileSeq = 18
                         
-                        fetchPredsFile = '/scratch/wialb/test/Log_2023-02-20_17-17-48/predictions/{:02d}_{:07d}.ply'.format(predsFileSeq, f_ind)
+                        fetchPredsFile = '/home/willalbert20/Documents/test/Log_2023-02-20_17-17-48/predictions/{:02d}_{:07d}.ply'.format(predsFileSeq, f_ind)
 
                         try:     
                             # Lire les points de predictions
@@ -348,6 +355,9 @@ class SemanticKittiDataset(PointCloudDataset):
                                 wanted_ind = np.random.choice(new_points.shape[0])
                         except:
                             wanted_ind = np.random.choice(new_points.shape[0])
+
+                    else:
+                        wanted_ind = np.random.choice(new_points.shape[0])
                     
                     
                     # Centre de la nouvelle sphere / center of the new sphere
@@ -372,11 +382,13 @@ class SemanticKittiDataset(PointCloudDataset):
                     # new_coords = new_coords.dot(pose0[:3, :3])
                     # new_coords = np.sum(np.expand_dims(new_coords, 2) * pose0[:3, :3], axis=1)
                     new_coords = np.hstack((new_coords, points[rand_order]))
-
+                                    
                 # Increment merge count
+                
                 merged_points = np.vstack((merged_points, new_points))
+                merged_points = np.asarray(merged_points, dtype=np.float32)
                 merged_labels = np.hstack((merged_labels, sem_labels))
-                merged_coords = np.vstack((merged_coords, new_coords))
+                merged_coords = merged_points#np.vstack((merged_coords, new_points))
                 num_merged+= 1
                 f_inc += 1
             t += [time.time()]
@@ -386,15 +398,7 @@ class SemanticKittiDataset(PointCloudDataset):
             #########################
             
             # Subsample merged frames
-            
-            in_pts, in_fts, in_lbls = grid_subsampling(
-                merged_points,
-                features=merged_coords,
-                labels=merged_labels,
-                sampleDl=self.config.first_subsampling_dl,
-            )
-            
-            #in_pts, in_lbls = grid_subsampling(merged_points,labels=merged_labels,sampleDl=self.config.first_subsampling_dl)
+            in_pts, in_fts, in_lbls = grid_subsampling(merged_points, features=merged_coords, labels=merged_labels, sampleDl=self.config.first_subsampling_dl)
             
             t += [time.time()]
 
@@ -402,7 +406,7 @@ class SemanticKittiDataset(PointCloudDataset):
             n = in_pts.shape[0]
             
             # Safe check
-            if n < 2:
+            if n < 10:
                 continue
 
             # Randomly drop some points (augmentation process and safety for GPU memory consumption)
@@ -411,10 +415,14 @@ class SemanticKittiDataset(PointCloudDataset):
                 in_pts = in_pts[input_inds, :]
                 in_fts = in_fts[input_inds, :]
                 in_lbls = in_lbls[input_inds]
+                #if self.set in ["validation", "test"]:      # AJOUT DE CETTE LIGNE
+                #    o_labels = o_labels[input_inds]         # AJOUT DE CETTE LIGNE
                 n = input_inds.shape[0]
 
             t += [time.time()]
-
+            
+            write_ply("/home/willalbert/Documents/out/cloud"+batch_i.__str__()+".ply", [in_pts, in_lbls], ['x', 'y', 'z', 'labels'])   # Donne une sphere
+            
             # Before augmenting, compute reprojection inds (only for validation and test)
             if self.set in ["validation", "test"]:
 
@@ -431,7 +439,9 @@ class SemanticKittiDataset(PointCloudDataset):
             else:
                 proj_inds = np.zeros((0,))
                 reproj_mask = np.zeros((0,))
-
+                
+            
+                
             t += [time.time()]
 
             # Data augmentation
@@ -476,7 +486,7 @@ class SemanticKittiDataset(PointCloudDataset):
         scales = np.array(s_list, dtype=np.float32)
         rots = np.stack(R_list, axis=0)
         
-        #write_ply("/scratch/wialb/testInput/"+'merged'+batch_i.__str__()+".ply", [stacked_points, labels, features], ['x', 'y', 'z', 'labels', 'features'])   # Donne une sphere
+        #write_ply("/home/willalbert20/Documents/out/"+'merged'+batch_i.__str__()+".ply", [stacked_points, labels], ['x', 'y', 'z', 'labels'])   # Donne une sphere
         
         # Input features (Use reflectance, input height or all coordinates)
         stacked_features = np.ones_like(stacked_points[:, :1], dtype=np.float32)
@@ -668,6 +678,7 @@ class SemanticKittiDataset(PointCloudDataset):
                     frame_mode = "multi"
                 seq_stat_file = join(
                     self.path,
+                    "inputs",
                     self.set,
                     "seq_stat",
                     seq,
@@ -698,7 +709,7 @@ class SemanticKittiDataset(PointCloudDataset):
                     seq_proportions = np.zeros((self.num_classes,), dtype=np.int32)
 
                     # Sequence path
-                    seq_path = join(self.path, self.set, "sequences", seq)
+                    seq_path = join(self.path, "inputs", self.set, "sequences", seq)
 
                     # Read all frames
 
@@ -707,8 +718,7 @@ class SemanticKittiDataset(PointCloudDataset):
                         label_file = join(seq_path, frame_name + ".ply")
                         
                         # Read labels
-                        sem_labels = read_ply(label_file)["semantic"]
-
+                        sem_labels = read_ply(label_file)["scalar_label"].astype(np.int32)
                         sem_labels = self.learning_map[sem_labels]
 
                         # Get present labels and there frequency
@@ -1093,278 +1103,6 @@ class SemanticKittiSampler(Sampler):
         # print('Calibration done in {:.1f}s\n'.format(time.time() - t0))
         return
 
-    # def calibration(self, dataloader, untouched_ratio=0.9, verbose=False, force_redo=False):
-    #     """
-    #     Method performing batch and neighbors calibration.
-    #         Batch calibration: Set "batch_limit" (the maximum number of points allowed in every batch) so that the
-    #                            average batch size (number of stacked pointclouds) is the one asked.
-    #     Neighbors calibration: Set the "neighborhood_limits" (the maximum number of neighbors allowed in convolutions)
-    #                            so that 90% of the neighborhoods remain untouched. There is a limit for each layer.
-    #     """
-
-    #     ##############################
-    #     # Previously saved calibration
-    #     ##############################
-
-    #     print('\nStarting Calibration (use verbose=True for more details)')
-    #     t0 = time.time()
-
-    #     redo = force_redo
-
-    #     # Batch limit
-    #     # ***********
-
-    #     # Load batch_limit dictionary
-    #     batch_lim_file = join(self.dataset.path, 'batch_limits.pkl')
-    #     if exists(batch_lim_file):
-    #         with open(batch_lim_file, 'rb') as file:
-    #             batch_lim_dict = pickle.load(file)
-    #     else:
-    #         batch_lim_dict = {}
-
-    #     # Check if the batch limit associated with current parameters exists
-    #     if self.dataset.balance_classes:
-    #         sampler_method = 'balanced'
-    #     else:
-    #         sampler_method = 'random'
-    #     key = '{:s}_{:.3f}_{:.3f}_{:d}_{:d}'.format(sampler_method,
-    #                                                 self.dataset.in_R,
-    #                                                 self.dataset.config.first_subsampling_dl,
-    #                                                 self.dataset.batch_num,
-    #                                                 self.dataset.max_in_p)
-    #     if not redo and key in batch_lim_dict:
-    #         self.dataset.batch_limit[0] = batch_lim_dict[key]
-    #     else:
-    #         redo = True
-
-    #     if verbose:
-    #         print('\nPrevious calibration found:')
-    #         print('Check batch limit dictionary')
-    #         if key in batch_lim_dict:
-    #             color = bcolors.OKGREEN
-    #             v = str(int(batch_lim_dict[key]))
-    #         else:
-    #             color = bcolors.FAIL
-    #             v = '?'
-    #         print('{:}\"{:s}\": {:s}{:}'.format(color, key, v, bcolors.ENDC))
-
-    #     # Neighbors limit
-    #     # ***************
-
-    #     # Load neighb_limits dictionary
-    #     neighb_lim_file = join(self.dataset.path, 'neighbors_limits.pkl')
-    #     if exists(neighb_lim_file):
-    #         with open(neighb_lim_file, 'rb') as file:
-    #             neighb_lim_dict = pickle.load(file)
-    #     else:
-    #         neighb_lim_dict = {}
-
-    #     # Check if the limit associated with current parameters exists (for each layer)
-    #     neighb_limits = []
-    #     for layer_ind in range(self.dataset.config.num_layers):
-
-    #         dl = self.dataset.config.first_subsampling_dl * (2**layer_ind)
-    #         if self.dataset.config.deform_layers[layer_ind]:
-    #             r = dl * self.dataset.config.deform_radius
-    #         else:
-    #             r = dl * self.dataset.config.conv_radius
-
-    #         key = '{:s}_{:d}_{:.3f}_{:.3f}'.format(sampler_method, self.dataset.max_in_p, dl, r)
-    #         if key in neighb_lim_dict:
-    #             neighb_limits += [neighb_lim_dict[key]]
-
-    #     if not redo and len(neighb_limits) == self.dataset.config.num_layers:
-    #         self.dataset.neighborhood_limits = neighb_limits
-    #     else:
-    #         redo = True
-
-    #     if verbose:
-    #         print('Check neighbors limit dictionary')
-    #         for layer_ind in range(self.dataset.config.num_layers):
-    #             dl = self.dataset.config.first_subsampling_dl * (2**layer_ind)
-    #             if self.dataset.config.deform_layers[layer_ind]:
-    #                 r = dl * self.dataset.config.deform_radius
-    #             else:
-    #                 r = dl * self.dataset.config.conv_radius
-    #             key = '{:s}_{:d}_{:.3f}_{:.3f}'.format(sampler_method, self.dataset.max_in_p, dl, r)
-
-    #             if key in neighb_lim_dict:
-    #                 color = bcolors.OKGREEN
-    #                 v = str(neighb_lim_dict[key])
-    #             else:
-    #                 color = bcolors.FAIL
-    #                 v = '?'
-    #             print('{:}\"{:s}\": {:s}{:}'.format(color, key, v, bcolors.ENDC))
-
-    #     if redo:
-
-    #         ############################
-    #         # Neighbors calib parameters
-    #         ############################
-
-    #         # From config parameter, compute higher bound of neighbors number in a neighborhood
-    #         hist_n = int(np.ceil(4 / 3 * np.pi * (self.dataset.config.deform_radius + 1) ** 3))
-
-    #         # Histogram of neighborhood sizes
-    #         neighb_hists = np.zeros((self.dataset.config.num_layers, hist_n), dtype=np.int32)
-
-    #         ########################
-    #         # Batch calib parameters
-    #         ########################
-
-    #         # Estimated average batch size and target value
-    #         estim_b = 0
-    #         target_b = self.dataset.batch_num
-
-    #         # Calibration parameters
-    #         low_pass_T = 10
-    #         Kp = 100.0
-    #         finer = False
-
-    #         # Convergence parameters
-    #         smooth_errors = []
-    #         converge_threshold = 0.1
-
-    #         # Save input pointcloud sizes to control max_in_points
-    #         cropped_n = 0
-    #         all_n = 0
-
-    #         # Loop parameters
-    #         last_display = time.time()
-    #         i = 0
-    #         breaking = False
-
-    #         #####################
-    #         # Perform calibration
-    #         #####################
-
-    #         #self.dataset.batch_limit[0] = self.dataset.max_in_p * (self.dataset.batch_num - 1)
-
-    #         for epoch in range(10):
-    #             for batch_i, batch in enumerate(dataloader):
-
-    #                 # Control max_in_points value
-    #                 are_cropped = batch.lengths[0] > self.dataset.max_in_p - 1
-    #                 cropped_n += torch.sum(are_cropped.type(torch.int32)).item()
-    #                 all_n += int(batch.lengths[0].shape[0])
-
-    #                 # Update neighborhood histogram
-    #                 counts = [np.sum(neighb_mat.numpy() < neighb_mat.shape[0], axis=1) for neighb_mat in batch.neighbors]
-    #                 hists = [np.bincount(c, minlength=hist_n)[:hist_n] for c in counts]
-    #                 neighb_hists += np.vstack(hists)
-
-    #                 # batch length
-    #                 b = len(batch.frame_inds)
-
-    #                 # Update estim_b (low pass filter)
-    #                 estim_b += (b - estim_b) / low_pass_T
-
-    #                 # Estimate error (noisy)
-    #                 error = target_b - b
-
-    #                 # Save smooth errors for convergene check
-    #                 smooth_errors.append(target_b - estim_b)
-    #                 if len(smooth_errors) > 10:
-    #                     smooth_errors = smooth_errors[1:]
-
-    #                 # Update batch limit with P controller
-    #                 self.dataset.batch_limit[0] += Kp * error
-
-    #                 # finer low pass filter when closing in
-    #                 if not finer and np.abs(estim_b - target_b) < 1:
-    #                     low_pass_T = 100
-    #                     finer = True
-
-    #                 # Convergence
-    #                 if finer and np.max(np.abs(smooth_errors)) < converge_threshold:
-    #                     breaking = True
-    #                     break
-
-    #                 i += 1
-    #                 t = time.time()
-
-    #                 # Console display (only one per second)
-    #                 if verbose and (t - last_display) > 1.0:
-    #                     last_display = t
-    #                     message = 'Step {:5d}  estim_b ={:5.2f} batch_limit ={:7d}'
-    #                     print(message.format(i,
-    #                                          estim_b,
-    #                                          int(self.dataset.batch_limit[0])))
-
-    #             if breaking:
-    #                 break
-
-    #         # Use collected neighbor histogram to get neighbors limit
-    #         cumsum = np.cumsum(neighb_hists.T, axis=0)
-    #         percentiles = np.sum(cumsum < (untouched_ratio * cumsum[hist_n - 1, :]), axis=0)
-    #         self.dataset.neighborhood_limits = percentiles
-
-    #         if verbose:
-
-    #             # Crop histogram
-    #             while np.sum(neighb_hists[:, -1]) == 0:
-    #                 neighb_hists = neighb_hists[:, :-1]
-    #             hist_n = neighb_hists.shape[1]
-
-    #             print('\n**************************************************\n')
-    #             line0 = 'neighbors_num '
-    #             for layer in range(neighb_hists.shape[0]):
-    #                 line0 += '|  layer {:2d}  '.format(layer)
-    #             print(line0)
-    #             for neighb_size in range(hist_n):
-    #                 line0 = '     {:4d}     '.format(neighb_size)
-    #                 for layer in range(neighb_hists.shape[0]):
-    #                     if neighb_size > percentiles[layer]:
-    #                         color = bcolors.FAIL
-    #                     else:
-    #                         color = bcolors.OKGREEN
-    #                     line0 += '|{:}{:10d}{:}  '.format(color,
-    #                                                      neighb_hists[layer, neighb_size],
-    #                                                      bcolors.ENDC)
-
-    #                 print(line0)
-
-    #             print('\n**************************************************\n')
-    #             print('\nchosen neighbors limits: ', percentiles)
-    #             print()
-
-    #         # Control max_in_points value
-    #         print('\n**************************************************\n')
-    #         if cropped_n > 0.3 * all_n:
-    #             color = bcolors.FAIL
-    #         else:
-    #             color = bcolors.OKGREEN
-    #         print('Current value of max_in_points {:d}'.format(self.dataset.max_in_p))
-    #         print('  > {:}{:.1f}% inputs are cropped{:}'.format(color, 100 * cropped_n / all_n, bcolors.ENDC))
-    #         if cropped_n > 0.3 * all_n:
-    #             print('\nTry a higher max_in_points value\n'.format(100 * cropped_n / all_n))
-    #             #raise ValueError('Value of max_in_points too low')
-    #         print('\n**************************************************\n')
-
-    #         # Save batch_limit dictionary
-    #         key = '{:s}_{:.3f}_{:.3f}_{:d}_{:d}'.format(sampler_method,
-    #                                                     self.dataset.in_R,
-    #                                                     self.dataset.config.first_subsampling_dl,
-    #                                                     self.dataset.batch_num,
-    #                                                     self.dataset.max_in_p)
-    #         batch_lim_dict[key] = float(self.dataset.batch_limit[0])
-    #         with open(batch_lim_file, 'wb') as file:
-    #             pickle.dump(batch_lim_dict, file)
-
-    #         # Save neighb_limit dictionary
-    #         for layer_ind in range(self.dataset.config.num_layers):
-    #             dl = self.dataset.config.first_subsampling_dl * (2 ** layer_ind)
-    #             if self.dataset.config.deform_layers[layer_ind]:
-    #                 r = dl * self.dataset.config.deform_radius
-    #             else:
-    #                 r = dl * self.dataset.config.conv_radius
-    #             key = '{:s}_{:d}_{:.3f}_{:.3f}'.format(sampler_method, self.dataset.max_in_p, dl, r)
-    #             neighb_lim_dict[key] = self.dataset.neighborhood_limits[layer_ind]
-    #         with open(neighb_lim_file, 'wb') as file:
-    #             pickle.dump(neighb_lim_dict, file)
-
-    #     print('Calibration done in {:.1f}s\n'.format(time.time() - t0))
-    #     return
 
 
 class SemanticKittiCustomBatch:
@@ -1417,7 +1155,7 @@ class SemanticKittiCustomBatch:
         self.reproj_masks = input_list[ind]
         ind += 1
         self.val_labels = input_list[ind]
-
+        
         return
 
     def pin_memory(self):

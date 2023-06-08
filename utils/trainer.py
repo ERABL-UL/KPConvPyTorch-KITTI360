@@ -43,6 +43,10 @@ from sklearn.neighbors import KDTree
 
 from models.blocks import KPConv
 
+# For loging
+import wandb
+import pandas as pd
+
 
 # ----------------------------------------------------------------------------------------------------------------------
 #
@@ -56,7 +60,7 @@ class ModelTrainer:
     # Initialization methods
     # ------------------------------------------------------------------------------------------------------------------
 
-    def __init__(self, net, config, chkp_path=None, finetune=False, on_gpu=True):
+    def __init__(self, net, config, chkp_path=None, finetune=True, on_gpu=True):
         """
         Initialize training parameters and reload previous model for restore/finetune
         :param net: network object
@@ -76,7 +80,8 @@ class ModelTrainer:
 
         # Optimizer with specific learning rate for deformable KPConv
         deform_params = [v for k, v in net.named_parameters() if 'offset' in k]
-        other_params = [v for k, v in net.named_parameters() if 'offset' not in k]
+        other_params = [v for k, v in net.named_parameters()
+                        if 'offset' not in k]
         deform_lr = config.learning_rate * config.deform_lr_factor
         self.optimizer = torch.optim.SGD([{'params': other_params},
                                           {'params': deform_params, 'lr': deform_lr}],
@@ -87,8 +92,10 @@ class ModelTrainer:
         # Choose to train on CPU or GPU
         if on_gpu and torch.cuda.is_available():
             self.device = torch.device("cuda:0")
+            print("\nUsing GPU")
         else:
             self.device = torch.device("cpu")
+            print("\nNOT Using GPU")
         net.to(self.device)
 
         ##########################
@@ -104,7 +111,8 @@ class ModelTrainer:
             else:
                 checkpoint = torch.load(chkp_path)
                 net.load_state_dict(checkpoint['model_state_dict'])
-                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                self.optimizer.load_state_dict(
+                    checkpoint['optimizer_state_dict'])
                 self.epoch = checkpoint['epoch']
                 net.train()
                 print("Model and training state restored.")
@@ -112,12 +120,14 @@ class ModelTrainer:
         # Path of the result folder
         if config.saving:
             if config.saving_path is None:
-                config.saving_path = time.strftime('results/Log_%Y-%m-%d_%H-%M-%S', time.gmtime())
+                config.saving_path = time.strftime(
+                    'results/Log_%Y-%m-%d_%H-%M-%S', time.gmtime())
             if not exists(config.saving_path):
                 makedirs(config.saving_path)
             config.save()
-            
-        self.best_mIoU = 0
+
+        self.best_mVal_Mat = ''
+        self.best_mVal_IoU = 0
 
         return
 
@@ -136,7 +146,8 @@ class ModelTrainer:
         if config.saving:
             # Training log file
             with open(join(config.saving_path, 'training.txt'), "w") as file:
-                file.write('epochs steps out_loss offset_loss train_accuracy time\n')
+                file.write(
+                    'epochs steps out_loss offset_loss train_accuracy time\n')
 
             # Killing file (simply delete this file when you want to stop the training)
             PID_file = join(config.saving_path, 'running_PID.txt')
@@ -152,6 +163,7 @@ class ModelTrainer:
             checkpoint_directory = None
             PID_file = None
 
+        #config.epoch_steps = 70
         # Loop variables
         t0 = time.time()
         t = [time.time()]
@@ -178,7 +190,7 @@ class ModelTrainer:
                 # New time
                 t = t[-1:]
                 t += [time.time()]
-                
+
                 if 'cuda' in self.device.type:
                     batch.to(self.device)
 
@@ -197,10 +209,10 @@ class ModelTrainer:
 
                 if config.grad_clip_norm > 0:
                     # torch.nn.utils.clip_grad_norm_(net.parameters(), config.grad_clip_norm) # What is this?
-                    torch.nn.utils.clip_grad_value_(net.parameters(), config.grad_clip_norm)
+                    torch.nn.utils.clip_grad_value_(
+                        net.parameters(), config.grad_clip_norm)
                 self.optimizer.step()
 
-                
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize(self.device)
 
@@ -210,18 +222,19 @@ class ModelTrainer:
                 if self.step < 2:
                     mean_dt = np.array(t[1:]) - np.array(t[:-1])
                 else:
-                    mean_dt = 0.9 * mean_dt + 0.1 * (np.array(t[1:]) - np.array(t[:-1]))
+                    mean_dt = 0.9 * mean_dt + 0.1 * \
+                        (np.array(t[1:]) - np.array(t[:-1]))
 
                 # Console display (only one per second)
                 if (t[-1] - last_display) > 1.0:
                     last_display = t[-1]
                     message = 'e{:03d}-i{:04d} => L={:.3f} acc={:3.0f}% / t(ms): {:5.1f} {:5.1f} {:5.1f})'
                     print(message.format(self.epoch, self.step,
-                                          loss.item(),
-                                          100*acc,
-                                          1000 * mean_dt[0],
-                                          1000 * mean_dt[1],
-                                          1000 * mean_dt[2]))
+                                         loss.item(),
+                                         100*acc,
+                                         1000 * mean_dt[0],
+                                         1000 * mean_dt[1],
+                                         1000 * mean_dt[2]))
 
                 # Log file
                 if config.saving:
@@ -233,7 +246,6 @@ class ModelTrainer:
                                                   net.reg_loss,
                                                   acc,
                                                   t[-1] - t0))
-
 
                 self.step += 1
                 del outputs, loss, acc, batch
@@ -248,10 +260,12 @@ class ModelTrainer:
 
             # Update learning rate
             if self.epoch in config.lr_decays:
+                print()
                 for param_group in self.optimizer.param_groups:
-                    print("Lr avant maj: ", param_group['lr'], "\n")
+                    print("Lr avant maj: ", param_group['lr'])
                     param_group['lr'] *= config.lr_decays[self.epoch]
-                    print("Lr apres maj: ", param_group['lr'], "\n")
+                    print("Lr apres maj: ", param_group['lr'])
+                print()
 
             # Update epoch
             self.epoch += 1
@@ -260,9 +274,9 @@ class ModelTrainer:
             if config.saving:
                 # Get current state dict
                 save_dict = {'epoch': self.epoch,
-                              'model_state_dict': net.state_dict(),
-                              'optimizer_state_dict': self.optimizer.state_dict(),
-                              'saving_path': config.saving_path}
+                             'model_state_dict': net.state_dict(),
+                             'optimizer_state_dict': self.optimizer.state_dict(),
+                             'saving_path': config.saving_path}
 #
 #                # Save current state of the network (for restoring purposes)
 #                checkpoint_path = join(checkpoint_directory, 'Log_2023-03-22_20-41-06.tar')
@@ -293,9 +307,11 @@ class ModelTrainer:
         elif config.dataset_task == 'cloud_segmentation':
             self.cloud_segmentation_validation(net, val_loader, config)
         elif config.dataset_task == 'slam_segmentation':
-            self.slam_segmentation_validation(net, val_loader, config, epoch, save_dict)
+            self.slam_segmentation_validation(
+                net, val_loader, config, epoch, save_dict)
         else:
-            raise ValueError('No validation method implemented for this network type')
+            raise ValueError(
+                'No validation method implemented for this network type')
 
     def object_classification_validation(self, net, val_loader, config):
         """
@@ -318,7 +334,8 @@ class ModelTrainer:
 
         # Initialize global prediction over all models
         if not hasattr(self, 'val_probs'):
-            self.val_probs = np.zeros((val_loader.dataset.num_models, nc_model))
+            self.val_probs = np.zeros(
+                (val_loader.dataset.num_models, nc_model))
 
         #####################
         # Network predictions
@@ -353,7 +370,8 @@ class ModelTrainer:
 
             # Average timing
             t += [time.time()]
-            mean_dt = 0.95 * mean_dt + 0.05 * (np.array(t[1:]) - np.array(t[:-1]))
+            mean_dt = 0.95 * mean_dt + 0.05 * \
+                (np.array(t[1:]) - np.array(t[:-1]))
 
             # Display
             if (t[-1] - last_display) > 1.0:
@@ -372,7 +390,8 @@ class ModelTrainer:
         # Voting validation
         ###################
 
-        self.val_probs[obj_inds] = val_smooth * self.val_probs[obj_inds] + (1-val_smooth) * probs
+        self.val_probs[obj_inds] = val_smooth * \
+            self.val_probs[obj_inds] + (1-val_smooth) * probs
 
         ############
         # Confusions
@@ -389,7 +408,6 @@ class ModelTrainer:
         C2 = fast_confusion(val_loader.dataset.input_labels,
                             np.argmax(self.val_probs, axis=1),
                             validation_labels)
-
 
         # Saving (optionnal)
         if config.saving:
@@ -413,7 +431,8 @@ class ModelTrainer:
 
         val_ACC = 100 * np.sum(np.diag(C1)) / (np.sum(C1) + 1e-6)
         vote_ACC = 100 * np.sum(np.diag(C2)) / (np.sum(C2) + 1e-6)
-        print('Accuracies : val = {:.1f}% / vote = {:.1f}%'.format(val_ACC, vote_ACC))
+        print(
+            'Accuracies : val = {:.1f}% / vote = {:.1f}%'.format(val_ACC, vote_ACC))
 
         return C1
 
@@ -441,8 +460,8 @@ class ModelTrainer:
 
         # Number of classes predicted by the model
         nc_model = config.num_classes
-        #print(nc_tot)
-        #print(nc_model)
+        # print(nc_tot)
+        # print(nc_model)
 
         # Initiate global prediction over validation clouds
         if not hasattr(self, 'validation_probs'):
@@ -467,7 +486,6 @@ class ModelTrainer:
         last_display = time.time()
         mean_dt = np.zeros(1)
 
-
         t1 = time.time()
         print("HERE1")
         # Start validation loop
@@ -478,7 +496,6 @@ class ModelTrainer:
             t += [time.time()]
             if 'cuda' in self.device.type:
                 batch.to(self.device)
-            
 
             # Forward pass
             outputs = net(batch, config)
@@ -505,7 +522,7 @@ class ModelTrainer:
 
                 # Update current probs in whole cloud
                 self.validation_probs[c_i][inds] = val_smooth * self.validation_probs[c_i][inds] \
-                                                   + (1 - val_smooth) * probs
+                    + (1 - val_smooth) * probs
 
                 # Stack all prediction for this epoch
                 predictions.append(probs)
@@ -514,7 +531,8 @@ class ModelTrainer:
 
             # Average timing
             t += [time.time()]
-            mean_dt = 0.95 * mean_dt + 0.05 * (np.array(t[1:]) - np.array(t[:-1]))
+            mean_dt = 0.95 * mean_dt + 0.05 * \
+                (np.array(t[1:]) - np.array(t[:-1]))
 
             # Display
             if (t[-1] - last_display) > 1.0:
@@ -538,8 +556,8 @@ class ModelTrainer:
             preds = val_loader.dataset.label_values[np.argmax(probs, axis=1)]
 
             # Confusions
-            Confs[i, :, :] = fast_confusion(truth, preds, val_loader.dataset.label_values).astype(np.int32)
-
+            Confs[i, :, :] = fast_confusion(
+                truth, preds, val_loader.dataset.label_values).astype(np.int32)
 
         t3 = time.time()
 
@@ -553,8 +571,8 @@ class ModelTrainer:
                 C = np.delete(C, l_ind, axis=1)
 
         # Balance with real validation proportions
-        C *= np.expand_dims(self.val_proportions / (np.sum(C, axis=1) + 1e-6), 1)
-
+        C *= np.expand_dims(self.val_proportions /
+                            (np.sum(C, axis=1) + 1e-6), 1)
 
         t4 = time.time()
 
@@ -590,13 +608,15 @@ class ModelTrainer:
                     makedirs(pot_path)
                 files = val_loader.dataset.files
                 for i, file_path in enumerate(files):
-                    pot_points = np.array(val_loader.dataset.pot_trees[i].data, copy=False)
+                    pot_points = np.array(
+                        val_loader.dataset.pot_trees[i].data, copy=False)
                     cloud_name = file_path.split('/')[-1]
                     pot_name = join(pot_path, cloud_name)
-                    pots = val_loader.dataset.potentials[i].numpy().astype(np.float32)
+                    pots = val_loader.dataset.potentials[i].numpy().astype(
+                        np.float32)
                     write_ply(pot_name,
-                            [pot_points.astype(np.float32), pots],
-                            ['x', 'y', 'z', 'pots'])
+                              [pot_points.astype(np.float32), pots],
+                              ['x', 'y', 'z', 'pots'])
 
         t6 = time.time()
 
@@ -606,7 +626,8 @@ class ModelTrainer:
 
         # Save predicted cloud occasionally
         if config.saving and (self.epoch + 1) % config.checkpoint_gap == 0:
-            val_path = join(config.saving_path, 'val_preds_{:d}'.format(self.epoch + 1))
+            val_path = join(config.saving_path,
+                            'val_preds_{:d}'.format(self.epoch + 1))
             if not exists(val_path):
                 makedirs(val_path)
             files = val_loader.dataset.files
@@ -624,17 +645,20 @@ class ModelTrainer:
                         sub_probs = np.insert(sub_probs, l_ind, 0, axis=1)
 
                 # Get the predicted labels
-                sub_preds = val_loader.dataset.label_values[np.argmax(sub_probs, axis=1).astype(np.int32)]
+                sub_preds = val_loader.dataset.label_values[np.argmax(
+                    sub_probs, axis=1).astype(np.int32)]
 
                 # Reproject preds on the evaluations points
-                preds = (sub_preds[val_loader.dataset.test_proj[i]]).astype(np.int32)
+                preds = (sub_preds[val_loader.dataset.test_proj[i]]).astype(
+                    np.int32)
 
                 # Path of saved validation file
                 cloud_name = file_path.split('/')[-1]
                 val_name = join(val_path, cloud_name)
 
                 # Save file
-                labels = val_loader.dataset.validation_labels[i].astype(np.int32)
+                labels = val_loader.dataset.validation_labels[i].astype(
+                    np.int32)
                 write_ply(val_name,
                           [points, preds, labels],
                           ['x', 'y', 'z', 'preds', 'class'])
@@ -652,10 +676,10 @@ class ModelTrainer:
             print('Save1 ..... {:.1f}s'.format(t6 - t5))
             print('Save2 ..... {:.1f}s'.format(t7 - t6))
             print('\n************************\n')
-        
+
         return
 
-    def slam_segmentation_validation(self, net, val_loader, config, epoch, save_dict = None, debug=True):
+    def slam_segmentation_validation(self, net, val_loader, config, epoch, save_dict=None, debug=True):
         """
         Validation method for slam segmentation models
         """
@@ -674,7 +698,7 @@ class ModelTrainer:
         softmax = torch.nn.Softmax(1)
 
         # Create folder for validation predictions
-        if not exists (join(config.saving_path, 'val_preds')):
+        if not exists(join(config.saving_path, 'val_preds')):
             makedirs(join(config.saving_path, 'val_preds'))
 
         # initiate the dataset validation containers
@@ -696,7 +720,6 @@ class ModelTrainer:
         t = [time.time()]
         last_display = time.time()
         mean_dt = np.zeros(1)
-
 
         t1 = time.time()
 
@@ -749,10 +772,12 @@ class ModelTrainer:
                         proj_probs = np.insert(proj_probs, l_ind, 0, axis=1)
 
                 # Predicted labels
-                preds = val_loader.dataset.label_values[np.argmax(proj_probs, axis=1)]
+                preds = val_loader.dataset.label_values[np.argmax(
+                    proj_probs, axis=1)]
 
                 # Save predictions in a binary file
-                filename = '{:s}_{:07d}.npy'.format(val_loader.dataset.sequences[s_ind], f_ind)
+                filename = '{:s}_{:07d}.npy'.format(
+                    val_loader.dataset.sequences[s_ind], f_ind)
                 filepath = join(config.saving_path, 'val_preds', filename)
 
                 if exists(filepath):
@@ -760,13 +785,16 @@ class ModelTrainer:
                 else:
                     frame_preds = np.zeros(frame_labels.shape, dtype=np.uint8)
                 frame_preds[proj_mask] = preds.astype(np.uint8)
+                #frame_preds = preds.astype(np.uint8)
                 np.save(filepath, frame_preds)
 
                 # Save some of the frame pots
-                if f_ind % 20 == 0:
-                    seq_path = join(val_loader.dataset.path, 'validation/sequences', val_loader.dataset.sequences[s_ind])
-                    velo_file = join(seq_path, val_loader.dataset.frames[s_ind][f_ind] + '.ply')
-                    
+                if f_ind % 20 == -1:  # 0:
+                    seq_path = join(
+                        val_loader.dataset.path, 'inputs/validation/sequences', val_loader.dataset.sequences[s_ind])
+                    velo_file = join(
+                        seq_path, val_loader.dataset.frames[s_ind][f_ind] + '.ply')
+
                     # Read points
                     frame_points = read_ply(velo_file)
 
@@ -774,10 +802,14 @@ class ModelTrainer:
                     y = frame_points["y"]
                     z = frame_points["z"]
                     points = np.c_[x, y, z]
-                    
+
                     write_ply(filepath[:-4] + '_pots.ply',
                               [points, frame_labels, frame_preds],
                               ['x', 'y', 'z', 'gt', 'pre'])
+
+                #print("\nframe_labels.shape: ", frame_labels.shape, "\n")
+                #print("\nframe_preds.astype(np.int32): ", frame_preds.astype(np.int32), "\n")
+                #print("\nval_loader.dataset.label_values: ", val_loader.dataset.label_values, "\n")
 
                 # Update validation confusions
                 frame_C = fast_confusion(frame_labels,
@@ -794,7 +826,8 @@ class ModelTrainer:
 
             # Average timing
             t += [time.time()]
-            mean_dt = 0.95 * mean_dt + 0.05 * (np.array(t[1:]) - np.array(t[:-1]))
+            mean_dt = 0.95 * mean_dt + 0.05 * \
+                (np.array(t[1:]) - np.array(t[:-1]))
 
             # Display
             if (t[-1] - last_display) > 1.0:
@@ -811,7 +844,8 @@ class ModelTrainer:
         for i, (preds, truth) in enumerate(zip(predictions, targets)):
 
             # Confusions
-            Confs[i, :, :] = fast_confusion(truth, preds, val_loader.dataset.label_values).astype(np.int32)
+            Confs[i, :, :] = fast_confusion(
+                truth, preds, val_loader.dataset.label_values).astype(np.int32)
 
         t3 = time.time()
 
@@ -823,11 +857,13 @@ class ModelTrainer:
         C = np.sum(Confs, axis=0).astype(np.float32)
 
         # Balance with real validation proportions
-        C *= np.expand_dims(val_loader.dataset.class_proportions / (np.sum(C, axis=1) + 1e-6), 1)
+        C *= np.expand_dims(val_loader.dataset.class_proportions /
+                            (np.sum(C, axis=1) + 1e-6), 1)
 
         # Remove ignored labels from confusions
         for l_ind, label_value in reversed(list(enumerate(val_loader.dataset.label_values))):
             if label_value in val_loader.dataset.ignored_labels:
+
                 C = np.delete(C, l_ind, axis=0)
                 C = np.delete(C, l_ind, axis=1)
 
@@ -841,9 +877,11 @@ class ModelTrainer:
         t4 = time.time()
 
         # Sum all validation confusions
-        C_tot = [np.sum(seq_C, axis=0) for seq_C in val_loader.dataset.val_confs if len(seq_C) > 0]
+        C_tot = [np.sum(seq_C, axis=0)
+                 for seq_C in val_loader.dataset.val_confs if len(seq_C) > 0]
         C_tot = np.sum(np.stack(C_tot, axis=0), axis=0)
 
+        mVal_Mat = ''
         if debug:
             s = '\n'
             for cc in C_tot:
@@ -851,6 +889,7 @@ class ModelTrainer:
                     s += '{:8.1f} '.format(c)
                 s += '\n'
             print(s)
+            mVal_Mat += s
 
         # Remove ignored labels from confusions
         for l_ind, label_value in reversed(list(enumerate(val_loader.dataset.label_values))):
@@ -868,10 +907,7 @@ class ModelTrainer:
         print('{:s} : subpart mIoU = {:.1f} %'.format(config.dataset, mIoU))
         mVal_IoU = 100 * np.mean(val_IoUs)
         print('{:s} :     val mIoU = {:.1f} %'.format(config.dataset, mVal_IoU))
-        
-        IoUs = IoUs#, mIoU]
-        val_IoUs = val_IoUs#, mVal_IoU]
-        
+
         # Saving (optionnal)
         if config.saving:
 
@@ -896,33 +932,47 @@ class ModelTrainer:
                     with open(test_file, "w") as text_file:
                         text_file.write(line)
 
-            # Save checkpoints when mIoU is the best
-            if mIoU > self.best_mIoU:
-                self.best_mIoU = mIoU
+            # Save checkpoints when mVal_IoU is the best
+            if mVal_IoU > self.best_mVal_IoU:
+                self.best_mVal_Mat = mVal_Mat
+                self.best_mVal_IoU = mVal_IoU
                 checkpoint_directory = join(config.saving_path, 'checkpoints')
-                checkpoint_path = join(checkpoint_directory, 'chkp_best_mIoU.tar') #'chkp_{:04d}.tar'.format(self.epoch + 1))
+                # 'chkp_{:04d}.tar'.format(self.epoch + 1))
+                checkpoint_path = join(
+                    checkpoint_directory, 'chkp_best_mVal_IoU.tar')
                 torch.save(save_dict, checkpoint_path)
-                
-                epoch_IoU_file = join(config.saving_path, "checkpoints/epoch_mIoU.txt")
-                with open(epoch_IoU_file, "w") as epoch_IoU_file:
-                    to_write = ['epoch: ', epoch+1, '\n IoUs: ', IoUs, '\n mIoU: ', mIoU, '\n val_IoUs: ', val_IoUs, '\n mVal_IoU: ', mVal_IoU]
+
+                epoch_IoU_file = join(config.saving_path,
+                                      "checkpoints/epoch_mVal_IoUs.txt")
+                open(epoch_IoU_file, "w").close()
+                with open(epoch_IoU_file, "a") as epoch_IoU_file:
+                    to_write = "epoch: {}, \nIoUs: {}, \nmIoU: {}, \nval_IoUs: {}, \nmVal_IoU: {}\n\n".format(
+                        epoch-1, IoUs.__str__(), mIoU.__str__(), val_IoUs.__str__(), mVal_IoU.__str__())
                     epoch_IoU_file.write(to_write.__str__())
+                    epoch_IoU_file.write(mVal_Mat.__str__())
                     epoch_IoU_file.close()
-            
-            epoch_ALL_IoUs_file = join(config.saving_path, "epoch_ALL_IoUs.txt")
-                        
+
+            print('{:s} :     best val mIoU = {:.1f} %'.format(
+                config.dataset, self.best_mVal_IoU))
+            epoch_ALL_IoUs_file = join(
+                config.saving_path, "epoch_ALL_mVal_IoUs.txt")
+
             if not exists(epoch_ALL_IoUs_file):
                 with open(epoch_ALL_IoUs_file, "w") as file:
                     entete = "epoch"
-                    for i in range(1, len(IoUs)+1): entete += ",IoU" + i.__str__()
-                    
+                    for dictKey, dictValue in val_loader.dataset.label_to_names.items():
+                        if dictKey != 0:
+                            entete += ",IoU_" + dictValue.__str__()
                     entete += ",mIoU"
-                    for i in range(1, len(val_IoUs)+1): entete += ",valIoU" + i.__str__()
-                    
+
+                    for dictKey, dictValue in val_loader.dataset.label_to_names.items():
+                        if dictKey != 0:
+                            entete += ",valIoU_" + dictValue.__str__()
                     entete += ",mVal_IoU\n"
-                    
-                    to_write = entete   #epoch,IoU1,IoU2,IoU3,...,mIoU,valIoU1,valIoU2,valIoU3,...,mValIoU
-                    
+
+                    # epoch,IoU_road,IoU_sidewalk,...,mIoU,valIoU_road,valIoU_sidewalk,...,mValIoU
+                    to_write = entete
+
                     file.write(to_write)
                     file.close()
 
@@ -931,14 +981,20 @@ class ModelTrainer:
                 IoUsTxt = ""
                 Val_IoUsTxt = ""
 
-                for i in IoUs: IoUsTxt += "," + i.__str__()
-                for i in val_IoUs: Val_IoUsTxt += "," + i.__str__()
+                for i in IoUs:
+                    IoUsTxt += "," + i.__str__()
+                for i in val_IoUs:
+                    Val_IoUsTxt += "," + i.__str__()
 
-                to_write += "{}{},{}{},{}\n".format(epoch+1, IoUsTxt, mIoU.__str__(), Val_IoUsTxt, mVal_IoU.__str__())
+                to_write += "{}{},{}{},{}\n".format(
+                    epoch-1, IoUsTxt, mIoU.__str__(), Val_IoUsTxt, mVal_IoU.__str__())
                 file.write(to_write)
                 file.close()
 
-                
+            # Logging data in WandB
+
+            wandb.log({"mIoU": mIoU, "mVal_IoU": mVal_IoU,
+                      "best_mVal_IoU": self.best_mVal_IoU})
 
         t6 = time.time()
 
@@ -955,38 +1011,3 @@ class ModelTrainer:
             print('\n************************\n')
 
         return
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

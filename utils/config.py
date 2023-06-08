@@ -53,13 +53,13 @@ class Config:
     in_points_dim = 3
 
     # Dimension of input features
-    in_features_dim = 1
+    in_features_dim = 1#2
 
     # Radius of the input sphere (ignored for models, only used for point clouds)
-    in_radius = 4.0
+    in_radius = 7.0
 
     # Number of CPU threads for the input pipeline
-    input_threads = 10
+    input_threads = 24
 
     ##################
     # Model parameters
@@ -73,7 +73,7 @@ class Config:
     invar_mode = ''
 
     # Dimension of the first feature maps
-    first_features_dim = 64
+    first_features_dim = 128# 64
 
     # Batch normalization parameters
     use_batch_norm = True
@@ -90,16 +90,16 @@ class Config:
     num_kernel_points = 15
 
     # Size of the first subsampling grid in meter
-    first_subsampling_dl = 0.1     #0.06
+    first_subsampling_dl = 0.1#0.06
 
     # Radius of convolution in "number grid cell". (2.5 is the standard value)
-    conv_radius = 2 #2.5
+    conv_radius = 2.5
 
     # Radius of deformable convolution in "number grid cell". Larger so that deformed kernel can spread out
-    deform_radius = 5.0
+    deform_radius = 4.0
 
     # Kernel point influence radius
-    KP_extent = 1.2 #1.0
+    KP_extent = 1.0
 
     # Influence function when d < KP_extent. ('constant', 'linear', 'gaussian') When d > KP_extent, always zero
     KP_influence = 'linear'
@@ -109,40 +109,40 @@ class Config:
     aggregation_mode = 'sum'
 
     # Fixed points in the kernel : 'none', 'center' or 'verticals'
-    fixed_kernel_points = 'none'    #'center'
+    fixed_kernel_points = 'none'
 
     # Use modulateion in deformable convolutions
-    modulated = True
+    modulated = False
 
     # For SLAM datasets like SemanticKitti number of frames used (minimum one)
     n_frames = 1
 
     # For SLAM datasets like SemanticKitti max number of point in input cloud + validation
-    max_in_points = 80000 #0
-    val_radius = 4.0
-    max_val_points = 80000 #50000
+    max_in_points = 12000
+    val_radius = 15.0
+    max_val_points = 12000
 
     #####################
     # Training parameters
     #####################
 
     # Network optimizer parameters (learning rate and momentum)
-    learning_rate = 1e-2 #1e-3
+    learning_rate = 1e-3
     momentum = 0.9
 
     # Learning rate decays. Dictionary of all decay values with their epoch {epoch: decay}.
-    lr_decays = {200: 0.2, 300: 0.2}
+    lr_decays = {i: 0.7 ** (i / 150) for i in range(1, 500, 50)} #{200: 0.2, 300: 0.2}
 
     # Gradient clipping value (negative means no clipping)
     grad_clip_norm = 100.0
 
     # Augmentation parameters
     augment_scale_anisotropic = True
-    augment_scale_min = 0.9
-    augment_scale_max = 1.1
-    augment_symmetries = [False, False, False]
+    augment_symmetries = [True, False, False]#[False, False, False]
+    augment_scale_min = 0.8#0.9
+    augment_scale_max = 1.2#1.1
     augment_rotation = 'vertical'
-    augment_noise = 0.005
+    augment_noise = 0.001#0.005
     #augment_color = 0.7
 
     # Augment with occlusions (not implemented yet)
@@ -168,8 +168,8 @@ class Config:
     repulse_extent = 1.0                    # Distance of repulsion for deformed kernel points
 
     # Number of batch
-    batch_num = 7
-    val_batch_num = 7
+    batch_num = 1
+    val_batch_num = 1
 
     # Maximal number of epochs
     max_epoch = 500
@@ -181,7 +181,7 @@ class Config:
     validation_size = 100
 
     # Number of epoch between each checkpoint
-    checkpoint_gap = 10 # inutile
+    checkpoint_gap = 10 # inutile parce qu'on garde le meilleur
 
     # Do we nee to save convergence
     saving = True
@@ -340,6 +340,7 @@ class Config:
             text_file.write('learning_rate = {:f}\n'.format(self.learning_rate))
             text_file.write('momentum = {:f}\n'.format(self.momentum))
             text_file.write('lr_decay_epochs =')
+
             for e, d in self.lr_decays.items():
                 text_file.write(' {:d}:{:f}'.format(e, d))
             text_file.write('\n')
