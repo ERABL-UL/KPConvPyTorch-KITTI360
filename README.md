@@ -1,3 +1,9 @@
+**Adaptation of KPConv to work with KITTI-360**
+
+**First phase of my M. Sc. degree**
+
+
+.........
 
 ![Intro figure](https://github.com/HuguesTHOMAS/KPConv-PyTorch/blob/master/doc/Github_intro.png)
 
