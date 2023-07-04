@@ -2,6 +2,8 @@
 
 **First phase of my M. Sc. degree**
 
+Knowledge of the semantic classes present in the scene aids in the detection and characterization of occlusions. Thus, the first phase of the methodology aims to perform semantic segmentation of the point clouds. In the context of this project, it is considered that these point clouds are related only to the residential area (i.e., from the property boundaries to the road), and the availability of ground footprints of buildings allows extracting these areas from the complete point cloud. Neural networks that have demonstrated good performance with dense point clouds in outdoor environments will be considered for semantic segmentation. There are several challenges related to semantic segmentation. The first challenge involves selecting the appropriate classes for the subsequent detection of occlusions. This will include determining the granularity of these classes (e.g., building versus facade, roof). The second challenge involves training the networks with publicly available datasets (e.g., KITTI-360). It will be necessary to adapt the segmentation approach to obtain satisfactory results for residential and rural areas, as KpConv is not suited for aggregated point clouds.
+
 
 .........
 
