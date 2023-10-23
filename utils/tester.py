@@ -574,7 +574,6 @@ class ModelTester:
 
                     # Safe check if only one point:
                     if proj_probs.ndim < 2:
-                        print("AlloAlloAllo tester.py 2")
                         proj_probs = np.expand_dims(proj_probs, 0)
                         
                     # Save probs in a binary file (uint8 format for lighter weight)
@@ -604,7 +603,6 @@ class ModelTester:
                         frame_probs_uint8_bis = frame_probs_uint8.copy()
                         for l_ind, label_value in enumerate(test_loader.dataset.label_values):
                             if label_value in test_loader.dataset.ignored_labels:
-                                print(label_value)
                                 frame_probs_uint8_bis = np.insert(frame_probs_uint8_bis, l_ind, 0, axis=1)
 
                         # Predicted labels
@@ -613,7 +611,7 @@ class ModelTester:
 
                         # Save some of the frame pots
                         if f_ind % 20 == 0:
-                            seq_path = join(test_loader.dataset.path, 'inputs/test/sequences', test_loader.dataset.sequences[s_ind])
+                            seq_path = join(test_loader.dataset.path, 'inputs', test_loader.dataset.set, 'sequences', test_loader.dataset.sequences[s_ind])
                             velo_file = join(seq_path, test_loader.dataset.frames[s_ind][f_ind] + '.ply')
                             # Read points
                             frame_points = read_ply(velo_file)

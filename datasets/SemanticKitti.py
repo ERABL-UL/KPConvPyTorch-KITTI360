@@ -69,8 +69,8 @@ class SemanticKittiDataset(PointCloudDataset):
 
         # Training or test set
         self.set = set
-        self.train_list = [88]#[0, 2, 3, 4, 5, 6, 7, 9, 10]
-        self.test_list = [8, 18] #[88]
+        self.train_list = [99]#99_simulation [89]#89_steMarthe  [88]#[0, 2, 3, 4, 5, 6, 7, 9, 10]
+        self.test_list = [88]#89_steMarthe #[8, 18] #[88]
         # Get a list of sequences
         if self.set == "training":
             self.sequences = ["{:02d}".format(i) for i in self.train_list]

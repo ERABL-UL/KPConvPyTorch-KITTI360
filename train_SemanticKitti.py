@@ -207,7 +207,7 @@ if __name__ == '__main__':
     
     user = "william-albert124"
     project = "KPConv_PyTorch"
-    display_name = "CATEG-2023-06-01_FT"
+    display_name = "CATEG-2023-10-19_FT2"
     notes = "void, flat, construction, object, vegetation, building, vehicle"
 
     wandb.init(entity=user, project=project, name=display_name, notes=notes)
@@ -273,9 +273,9 @@ if __name__ == '__main__':
     ft = True
     if ft:
         config.learning_rate = 1e-3
-        config.epoch_steps = 25
+        config.epoch_steps = 75
         config.validation_size = 13
-        config.max_epoch = 80
+        config.max_epoch = 15
 
     # Initialize datasets
     training_dataset = SemanticKittiDataset(config, set='training',
@@ -356,5 +356,5 @@ if __name__ == '__main__':
     os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=30\" -a \"[fan:1]/GPUTargetFanSpeed=30\"")
     os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=30\" -a \"[fan:1]/GPUTargetFanSpeed=30\"")
     
-    # print('Forcing exit now')
+    print('DONE')
     # os.kill(os.getpid(), signal.SIGINT)

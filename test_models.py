@@ -86,8 +86,8 @@ def model_choice(chosen_log):
 #
 
 if __name__ == '__main__':
-    os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=100\" -a \"[fan:1]/GPUTargetFanSpeed=100\"")
-    os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=100\" -a \"[fan:1]/GPUTargetFanSpeed=100\"")
+    os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=70\" -a \"[fan:1]/GPUTargetFanSpeed=70\"")
+    os.system("nvidia-settings -a \"[gpu:0]/GPUFanControlState=1\" -a \"[fan:0]/GPUTargetFanSpeed=70\" -a \"[fan:1]/GPUTargetFanSpeed=70\"")
     
     ###############################
     # Choose the model to visualize
@@ -98,12 +98,12 @@ if __name__ == '__main__':
     #       > 'last_XXX': Automatically retrieve the last trained model on dataset XXX
     #       > '(old_)results/Log_YYYY-MM-DD_HH-MM-SS': Directly provide the path of a trained model
 
-    chosen_log = 'results/Log_2023-05-15_19-03-10_CATEG69'
+    chosen_log = 'results/Log_2023-10-19_20-51-03_FT_BON'
 
     # Choose the index of the checkpoint to load OR None if you want to load the current checkpoint
     chkp_idx = None
     # Choose to test on validation or test split
-    on_val = False
+    on_val = True
 
     # Deal with 'last_XXXXXX' choices
     chosen_log = model_choice(chosen_log)
